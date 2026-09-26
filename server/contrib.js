@@ -256,6 +256,7 @@ function outlineRows(res, depth) {
       title: s.title || "(无标题)",
       number: s.cmd === "part" ? "第 " + nums[i].replace(/[^0-9]/g, "") + " 部分" : nums[i],
       indent: lv === 0 ? 0 : lv - 1,
+      src: s.src || "", /* v0.9.4：非空 = 这一条来自 \\input 进来的子文件 */
     });
   }
   return rows;
@@ -268,15 +269,25 @@ function outlineRows(res, depth) {
 function outlineProtocol(res, depth) {
   const rows = outlineRows(res, depth);
   const total = ((res && res.sections) || []).length;
+  const inc = (res && res.includes) || [];
+  const exp = inc.filter(function (i) { return !i.missing && !i.cycle && !i.error && !i.truncated; });
   const out = [];
-  out.push("📄 " + path.basename(res.file) + " · 章节 " + total + " · 大纲 " + rows.length + " 条");
+  /* v0.9.4：多文件项目的「章节 N」含 \input 进来的子文件，头部标一下子文件数，
+     否则有人对着「章节 11」在自己那份主文件里只数出 3 条，会以为是插件数错了 */
+  out.push("📄 " + path.basename(res.file) + " · 章节 " + total + " · 大纲 " + rows.length + " 条" +
+    (exp.length ? " · 含 " + exp.length + " 个子文件" : ""));
   if (!rows.length) {
-    out.push("（未发现 \\section / \\chapter 等章节命令）");
+    /* 章节非空却一条没渲染 → 是深度设置把它们滤掉了，不是文件里没有章节。
+       旧文案一口咬定「未发现 \\section」，把用户往错方向指。 */
+    const maxDepth = typeof depth === "number" && depth >= 0 ? depth : 2;
+    out.push(total
+      ? "（" + total + " 个章节全被大纲深度滤掉了：当前只显示到第 " + maxDepth + " 级，把设置里的大纲深度调大即可）"
+      : "（未发现 \\section / \\chapter 等章节命令）");
     return out.join("\n");
   }
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    out.push("[ ] #" + r.line + " " + "  ".repeat(r.indent) + r.number + "  " + r.title);
+    out.push("[ ] #" + r.line + " " + "  ".repeat(r.indent) + r.number + "  " + r.title + (r.src ? "  ⟵ " + r.src : ""));
   }
   return out.join("\n");
 }
@@ -326,7 +337,7 @@ function outlineHostItems(res, depth) {
   return rows.map(function (r) {
     return {
       level: Math.max(1, Math.min(6, Number(r.level) || 1)),
-      text: (r.number ? r.number + "  " : "") + r.title,
+      text: (r.number ? r.number + "  " : "") + r.title + (r.src ? "  ⟵ " + r.src : ""),
       anchor: String(r.line),
     };
   });
@@ -356,7 +367,7 @@ function statusLine(res, issues) {
   const s = (issues && issues.summary) || { errors: 0, warnings: 0, infos: 0 };
   const p = [];
   p.push("📐 " + path.basename(res.file));
-  p.push(((res.sections || []).length) + " 节");
+  p.push(((res.sections || []).length) + " 节" + (((res && res.includes) || []).length ? "（含子文件）" : ""));
   p.push(env.equation + " 公式");
   p.push(env.figure + " 图");
   p.push(env.table + " 表");

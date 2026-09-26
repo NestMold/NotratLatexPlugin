@@ -143,7 +143,7 @@ if (!Array.isArray(m.mcpServers)) throw new Error("mcpServers 必须是数组形
 const toolsDir = path.join(os.homedir(), ".notrat", "tools");
 fs.mkdirSync(toolsDir, { recursive: true });
 /* preview-core.js：v0.8.4 起 server 侧也要它（latex_export 的兜底渲染），必须一起带上 */
-for (const f of ["index.js", "contrib.js", "export-html.js", "preview-core.js", "pdf-raster.js"]) { /* v0.9.0: +pdf-raster */
+for (const f of ["index.js", "contrib.js", "export-html.js", "preview-core.js", "pdf-raster.js", "tex-encoding.js"]) { /* v0.9.0: +pdf-raster；v0.9.4: +tex-encoding（漏了 MCP server 起不来） */
   const dst = path.join(toolsDir, f === "index.js" ? "latex-server.js" : f);
   /* index.js 单独处理：把 server 里的 VERSION 常量对齐到 manifest.version（避免两处版本漂移） */
   let body = fs.readFileSync(path.join(ws, "server", f), "utf8");

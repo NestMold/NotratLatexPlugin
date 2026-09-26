@@ -20,6 +20,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const TEXENC = require("./tex-encoding.js"); // v0.9.4 子文件读的编码嗅探
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -210,7 +211,7 @@ function buildBodyHtml(source, baseDir) {
       if (!isAbs && dir) f = String(dir).replace(/[\\/]+$/, "") + "/" + n;
       if (!/\.[a-zA-Z0-9]+$/.test(f)) f += ".tex";
       try {
-        if (fs.statSync(f).isFile()) return { path: f, content: fs.readFileSync(f, "utf8") };
+        if (fs.statSync(f).isFile()) return { path: f, content: TEXENC.readTexSource(f) };
       } catch (e) { /* fallthrough */ }
       return { path: f };
     },

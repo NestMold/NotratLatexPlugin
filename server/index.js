@@ -20,6 +20,7 @@ const { spawn } = require("child_process");
 const readline = require("readline");
 const CONTRIB = require("./contrib.js"); // v0.4.0 新贡献面支撑（引擎探测/大纲/状态/快照）
 const EXPORT = require("./export-html.js"); // v0.8.4 导出（自包含 HTML）
+const TEXENC = require("./tex-encoding.js"); // v0.9.4 源码读取的编码嗅探（UTF-16/BOM）
 
 const VERSION = "0.8.6"; // 构建时按 manifest.version 覆写
 const PLUGIN_ID = process.env.NOTRAT_PLUGIN_ID || "notrat-latex-plugin";
@@ -54,7 +55,7 @@ function findMainTex(dir) {
   }
   for (const f of texFiles) {
     try {
-      if (/\\documentclass/.test(fs.readFileSync(f, "utf8"))) return f;
+      if (/\\documentclass/.test(TEXENC.readTexSource(f))) return f;
     } catch {}
   }
   if (texFiles.length) return texFiles[0];
@@ -212,8 +213,158 @@ function collectFloats(lines) {
   }));
 }
 
+/* ------------------------------------------------------------------ */
+/* 多文件展开：\input / \include → 子文件章节（v0.9.4）                  */
+/* ------------------------------------------------------------------ */
+
+/* 论文 / 标书常拆成「主文件 + 若干子文件」，主文件里只有一串 \input。
+ * 旧实现只扫「当前打开的那一个文件」，于是主文件的大纲必然是空的 ——
+ * 用户看到的那两行提示（该文件没有大纲条目 / latex_outline 未返回条目）
+ * 就是这么来的：跟换不换电脑无关，是这个文件本身。
+ *
+ * 展开规则与 TeX 一致：相对【当前文件所在目录】；无扩展名补 .tex。
+ * 限深 + 途经路径去重（循环 \input 截断而不是递归到死）。
+ * 子文件章节的 anchor 落回父文件里那条 \input 的行号上：用户点它时，
+ * 编辑器在【当前打开的文件】里定位 —— 跳到别的文件的行号只会跳错地方。
+ */
+
+const MAX_INCLUDE_DEPTH = 8;
+const MAX_INCLUDE_FILES = 64;
+
+/** 子文件路径解析：相对当前文件目录；无扩展名补 .tex；找不到返回 null */
+function resolveInclude(name, baseDir) {
+  const n = String(name || "").trim().replace(/^["']|["']$/g, "");
+  if (!n) return null;
+  const p = path.isAbsolute(n) ? n : path.join(baseDir || ".", n);
+  const tries = /\.[a-zA-Z0-9]+$/.test(p) ? [p] : [p, p + ".tex"];
+  for (let i = 0; i < tries.length; i++) {
+    try {
+      if (fs.statSync(tries[i]).isFile()) return tries[i];
+    } catch (e) {}
+  }
+  return null;
+}
+
+/** 一文件里的 \input / \include 命令（行号 + 目标名），与章节一起按行号排序 */
+function includeEvents(code) {
+  const lineOf = buildLineOf(code);
+  const re = /\\(input|include)\s*\{/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(code))) {
+    const g = readGroup(code, m.index + m[0].length - 1);
+    if (!g) continue;
+    out.push({ line: lineOf(m.index), name: g.content.trim(), cmd: m[1] });
+    re.lastIndex = g.end + 1;
+  }
+  return out;
+}
+
+function toPosixPath(p) {
+  return String(p).replace(/\\/g, "/");
+}
+
+/**
+ * 按文档顺序把子文件章节并进 sections。
+ * 返回 { sections, includes }；includes 逐条记着每个 \input 的去向与状态。
+ */
+function expandIncludes(rootFile, rootParsed) {
+  const rootDir = path.dirname(rootFile);
+  const seen = {};
+  const keyOf = function (f) {
+    try {
+      return fs.realpathSync(f);
+    } catch (e) {
+      return path.resolve(f).toLowerCase();
+    }
+  };
+  seen[keyOf(rootFile)] = true;
+  const includes = [];
+  let budget = MAX_INCLUDE_FILES;
+
+  function walk(file, depth, pre) {
+    const parsed = pre || parseTexSingle(file);
+    const code = stripComments(TEXENC.readTexSource(file));
+    const evs = [];
+    for (let i = 0; i < parsed.sections.length; i++) {
+      evs.push({ line: parsed.sections[i].line, kind: "sec", sec: parsed.sections[i] });
+    }
+    const incs = includeEvents(code);
+    for (let i = 0; i < incs.length; i++) {
+      evs.push({ line: incs[i].line, kind: "inc", name: incs[i].name });
+    }
+    evs.sort(function (a, b) {
+      return a.line - b.line;
+    });
+
+    const baseDir = path.dirname(file);
+    const acc = [];
+    for (let i = 0; i < evs.length; i++) {
+      const ev = evs[i];
+      if (ev.kind === "sec") {
+        acc.push(ev.sec);
+        continue;
+      }
+      const abs = resolveInclude(ev.name, baseDir);
+      const rel = toPosixPath(path.relative(rootDir, abs || path.join(baseDir, ev.name)));
+      if (!abs) {
+        includes.push({ file: rel, line: ev.line, missing: true });
+        continue;
+      }
+      const k = keyOf(abs);
+      if (seen[k]) {
+        includes.push({ file: rel, line: ev.line, cycle: true });
+        continue;
+      }
+      if (depth >= MAX_INCLUDE_DEPTH || budget <= 0) {
+        includes.push({ file: rel, line: ev.line, truncated: true });
+        continue;
+      }
+      seen[k] = true;
+      budget--;
+      let kids = [];
+      try {
+        kids = walk(abs, depth + 1, null);
+      } catch (e) {
+        includes.push({ file: rel, line: ev.line, error: e.message });
+        continue;
+      }
+      includes.push({ file: rel, line: ev.line, sections: kids.length });
+      for (let j = 0; j < kids.length; j++) {
+        const kk = kids[j];
+        kk.atLine = kk.line; // 子文件里的真实行号（留档，别丢）
+        kk.line = ev.line; // 锚点：父文件里那条 \input
+        kk.src = rel; // 展示用：这一条来自哪个子文件
+        acc.push(kk);
+      }
+    }
+    return acc;
+  }
+
+  return { sections: walk(rootFile, 0, rootParsed), includes: includes };
+}
+
+/**
+ * 解析 .tex（对外唯一入口）：单文件解析 + \input/\include 展开。
+ * 展开失败只降级成单文件，绝不让整条解析挂掉 —— 宁可少几条大纲，
+ * 也不能把「引用校验 / 状态栏」一起拖死。
+ */
 function parseTex(filePath) {
-  const raw = fs.readFileSync(filePath, "utf8");
+  const res = parseTexSingle(filePath);
+  let ex = null;
+  try {
+    ex = expandIncludes(filePath, res);
+  } catch (e) {
+    log("多文件展开失败（按单文件处理）: " + e.message);
+    return res;
+  }
+  res.sections = ex.sections;
+  if (ex.includes.length) res.includes = ex.includes;
+  return res;
+}
+
+function parseTexSingle(filePath) {
+  const raw = TEXENC.readTexSource(filePath);
   const code = stripComments(raw);
   const lines = code.split(/\r?\n/);
   const lineOf = buildLineOf(code);
@@ -472,10 +623,20 @@ function fmtParse(res, val) {
     L.push("", `📑 章节结构 (${res.sections.length}):`);
     for (const s of res.sections) {
       const pre = { part: "◆ ", chapter: "第○章 ", section: "§ ", subsection: "§§ ", subsubsection: "§§§ " }[s.cmd] || "";
-      L.push(`${"  ".repeat(s.level)}${pre}${s.title}  (L${s.line})`);
+      L.push(`${"  ".repeat(s.level)}${pre}${s.title}  (L${s.line}${s.src ? " · " + s.src : ""})`);
     }
   } else {
     L.push("", "📑 章节结构: 未发现 \\section 等命令");
+  }
+
+  /* v0.9.4：\input 进来的子文件逐条摊开 —— 「章节数怎么比我自己数的多」得有出处 */
+  if (res.includes && res.includes.length) {
+    const exp = res.includes.filter((i) => !i.missing && !i.cycle && !i.error && !i.truncated).length;
+    L.push("", `📂 子文件 (${exp}/${res.includes.length} 已展开):`);
+    for (const i of res.includes) {
+      const tag = i.missing ? "找不到" : i.cycle ? "循环引用，已截断" : i.truncated ? "超出展开上限" : i.error ? "读失败: " + i.error : "→ " + i.sections + " 节";
+      L.push("  \\input{" + i.file + "}  (L" + i.line + ")  " + tag);
+    }
   }
 
   const badRef = val ? new Map(val.issues.filter((i) => i.type === "undefined-ref").map((i) => [i.line, true])) : null;
@@ -711,7 +872,7 @@ function exportHtml(file, args) {
   const base = path.basename(file).replace(/\.tex$/i, "");
   let source = "";
   try {
-    source = fs.readFileSync(file, "utf8");
+    source = TEXENC.readTexSource(file);
   } catch (e) {
     source = "";
   }
@@ -974,7 +1135,7 @@ async function handleToolCall(name, args) {
       if (ext === ".tex") {
         const stx = fs.statSync(file);
         if (stx.size > 512 * 1024) throw new Error("子文件过大（>512KB），预览不展开");
-        return JSON.stringify({ text: fs.readFileSync(file, "utf8"), mtime: Math.round(stx.mtimeMs), size: stx.size });
+        return JSON.stringify({ text: TEXENC.readTexSource(file), mtime: Math.round(stx.mtimeMs), size: stx.size });
       }
       /* v0.9.0：pdf/eps → 栅格化成 PNG（mgs/gs/pdftoppm + tmpdir 磁盘缓存）；
        * 抛错让前端退回占位符，不影响预览主流程。 */

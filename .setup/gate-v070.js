@@ -31,6 +31,9 @@
  *                            23 层门禁一次没真的按过回车，所以现在钉的是**行为**
  *   [25] 行区间           : 段落一拆，下面所有块的行号都得跟着挪 —— 不挪的话下一笔回写
  *                            按旧区间 replace，源码里凭空多出一份**重复的正文**（0.8.27 加）
+ *   [28] 多文件大纲       : 「该文件没有大纲条目」的两个真成因 —— 主文件里只有 \input、
+ *                            文件存成 UTF-16（记事本「Unicode」）。展开子文件章节 +
+ *                            编码嗅探，且子文件章节的 anchor 必须落回父文件那行（0.9.4 加）
  *   [26] 光标几何 / 全选   : 「鼠标点击到块末尾的时候没有看到光标呢」「在编辑器内无法全选呢」
  *                            —— 空落脚行上放零宽占位（<br> 之后没有节点时 Chromium 算不出
  *                            光标几何，rect = 0,0,0,0）；Ctrl+A 由插件自己接管（0.8.29 加，
@@ -74,6 +77,7 @@ const steps = [
   { name: "标题块跨多行：章节快捷键还能干活 / 取消层级不毁稿（_test-v0828-headspan.js）", file: ".setup/_test-v0828-headspan.js" },
   { name: "光标几何 / 全选：点块末尾有光标 + Ctrl+A 由插件自己说了算（check-v0829-caret.js）", file: ".setup/check-v0829-caret.js" },
   { name: "端到端综合：大纲跳转 / 状态栏 / 格式键真派发（test-nav.js）", file: ".setup/test-nav.js" },
+  { name: "多文件大纲 + 编码嗅探：\\input 展开 / UTF-16 / 循环引用（v094-outline-multifile.js）", file: ".setup/check/v094-outline-multifile.js" },
 ];
 
 let failed = 0;
