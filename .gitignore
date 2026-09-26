@@ -1,0 +1,79 @@
+# ============================================================
+#  notrat-latex-plugin  /  .gitignore
+#  原则：只有「源码 + 资产 + 验收脚本」进仓库；
+#        本地痕迹、宿主逆向材料、依赖、编译产物一律不进。
+# ============================================================
+
+# ---------- 1. 私人痕迹：绝不公开 ----------
+.notrat/
+.latex-history/
+
+# ---------- 2. 依赖 ----------
+node_modules/
+
+# ---------- 3. Notrat 宿主应用打包产物 / 逆向材料（第三方代码，不公开）----------
+.setup/host/
+.setup/host133/
+.setup/live/
+
+# ---------- 4. .setup 里的一次性临时脚本 ----------
+# ⚠ 保留最后的「否定规则」，且必须排在所有 _* 规则之后：
+#   gate-v070.js 的第 22 步真的会执行 _test-v0828-headspan.js，
+#   整段排掉 _* 会让干净克隆上的 `npm run gate` 直接失败。
+.setup/_*
+.setup/**/_*
+.setup/.*
+!.setup/_test-v0828-headspan.js
+
+# ---------- 5. .setup 里的备份 / 输出 / 临时目录（非源码）----------
+.setup/backups/
+.setup/check-v052-out/
+.setup/out-v042/
+.setup/tmp-*/
+.setup/preview/
+*.bak
+*.bak-*
+
+# ---------- 6. LaTeX 编译中间产物 ----------
+# 注意：samples/sample.pdf 与 samples/sample.html 是**测试夹具**
+#      （.setup/check/smoke-mcp.js 与 check-v084-export.js 会断言它们），
+#      所以这里故意**不**写 *.pdf / *.html。
+*.aux
+*.log
+*.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# ---------- 7. 构建产物 ----------
+dist/
+build/
+
+# ---------- 8. 操作系统 / 编辑器垃圾 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- 9. 密钥（防御性；本项目当前未使用）----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- 10. 本次 git 初始化前的临时侦察脚本（跑完可删）----------
+.setup/_recon_git*.sh
+
+# ---------- 11. 剪贴板临时截图（教程用图改名后才进仓库）----------
+assets/clipboard-*.png
+.setup/out-*.json

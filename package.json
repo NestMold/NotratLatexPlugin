@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "katex": "^0.18.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "jsdom": "29.1.1"
+  },
+  "scripts": {
+    "gate": "node .setup/gate-v070.js",
+    "build": "node .setup/build-singlefile.js",
+    "corpus": "node server/corpus/_make.js",
+    "test:core": "node server/wysiwyg.test.js",
+    "test:docmodel": "node server/v09-docmodel.test.js",
+    "v09": "node server/v09-baseline.test.js",
+    "test:txlog": "node server/v09-txlog.test.js",
+    "test:multifile": "node server/v09-multifile.test.js"
+  }
+}

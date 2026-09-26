@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="generator" content="Notrat LaTeX 助手" />
+<title>Tempo：免选举的租约定序共识协议（插件演示样例）</title>
+<style>
+:root{
+  --background:0 0% 100%; --foreground:222 47% 11%;
+  --card:0 0% 100%; --card-foreground:222 47% 11%;
+  --muted:210 40% 96%; --muted-foreground:215 16% 47%;
+  --border:214 32% 91%;
+  --primary:221 83% 53%; --primary-foreground:210 40% 98%;
+  --popover:0 0% 100%; --popover-foreground:222 47% 11%;
+}
+html,body{margin:0;padding:0;background:hsl(var(--background));color:hsl(var(--foreground))}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;font-size:14px;line-height:1.8}
+.pv-export{max-width:860px;margin:0 auto;padding:28px 22px 72px}
+.pv-export a{color:hsl(var(--primary))}
+</style>
+<style>
+
+.pv-root{color:hsl(var(--foreground));word-break:break-word}
+.pv-root p{margin:0 0 10px}
+.pv-title{text-align:center;margin:18px 0 26px}
+.pv-title-main{font-size:22px;font-weight:700;line-height:1.4}
+.pv-author{margin-top:8px;color:hsl(var(--muted-foreground))}
+.pv-date{margin-top:2px;color:hsl(var(--muted-foreground));font-size:13px}
+.pv-h1{font-size:20px;font-weight:700;margin:26px 0 10px;padding-bottom:4px;border-bottom:1px solid hsl(var(--border))}
+.pv-h2{font-size:17px;font-weight:700;margin:22px 0 8px}
+.pv-h3{font-size:15px;font-weight:700;margin:18px 0 6px}
+.pv-par{font-weight:600;margin:14px 0 4px}
+.pv-eq{margin:12px 0;text-align:center;position:relative;overflow-x:auto}
+.pv-eqbody{display:inline-block;max-width:100%}
+.pv-eqno{position:absolute;right:0;top:50%;transform:translateY(-50%);color:hsl(var(--muted-foreground));font-size:13px}
+.pv-mini{font-family:Georgia,'Times New Roman',serif;font-style:italic;padding:0 2px}
+.pv-tabwrap{overflow-x:auto;margin:10px 0}
+.pv-tab{border-collapse:collapse;margin:8px auto;font-size:13.5px}
+.pv-tab td{border:1px solid hsl(var(--border));padding:4px 14px}
+.pv-hr td{border-top:2px solid hsl(var(--foreground)/.55)}
+.pv-float{border:1px dashed hsl(var(--border));border-radius:10px;padding:14px;margin:16px 0;text-align:center;background:hsl(var(--muted)/.25)}
+.pv-float figcaption{margin-top:8px;color:hsl(var(--muted-foreground));font-size:13px}
+.pv-img{max-width:88%;border-radius:6px;margin:4px 0}
+.pv-imgerr{outline:1px dashed #f59e0b}
+.pv-imgna{background:hsl(var(--muted)/.5);padding:20px;color:hsl(var(--muted-foreground));border-radius:8px;font-size:13px}
+.pv-inc{border:1px solid hsl(var(--border));border-left:3px solid hsl(var(--primary)/.55);border-radius:10px;margin:14px 0;overflow:hidden;background:hsl(var(--muted)/.14)}
+.pv-inc-h{padding:6px 12px;font-size:12px;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.35);border-bottom:1px solid hsl(var(--border))}
+.pv-inc-b{padding:10px 14px}
+.pv-inc-b .pv-ref,.pv-inc-b .pv-cite{pointer-events:none}
+.pv-inc-miss .pv-inc-b{color:hsl(var(--muted-foreground))}
+.pv-sc{font-variant:small-caps;letter-spacing:.03em}
+.pv-url{color:hsl(var(--primary));text-decoration:underline;text-underline-offset:2px;word-break:break-all}
+.pv-marg{display:inline-block;max-width:240px;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.45);border-radius:6px;padding:1px 8px;margin-left:6px;vertical-align:middle;text-align:left}
+.pv-tocph{border:1px dashed hsl(var(--border));border-radius:10px;padding:16px;margin:16px 0;text-align:center;color:hsl(var(--muted-foreground));font-size:13px;background:hsl(var(--muted)/.25)}
+.pv-tocmini{display:inline-block;margin:6px 0;padding:2px 10px;border-radius:999px;font-size:12px;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.5)}
+.pv-ref,.pv-cite{color:hsl(var(--primary));border-bottom:1px dotted hsl(var(--primary));cursor:pointer;font-size:.9em;padding:0 1px}
+.pv-ref:hover,.pv-cite:hover{background:hsl(var(--primary)/.12);border-radius:3px}
+.pv-bad{color:#ef4444;border-color:#ef4444}
+.pv-fn{font-size:11px;color:hsl(var(--muted-foreground))}
+.pv-bib{margin-top:22px;padding-top:10px;border-top:1px solid hsl(var(--border))}
+.pv-bib-t{font-weight:700;margin-bottom:8px}
+.pv-bibitem{padding-left:2.2em;text-indent:-2.2em;margin:4px 0;font-size:13px;line-height:1.7}
+.pv-bibno{margin-right:8px;font-weight:600}
+.pv-tt{background:hsl(var(--muted)/.6);padding:1px 5px;border-radius:4px;font-family:Consolas,monospace;font-size:.9em}
+.pv-code{background:hsl(var(--muted)/.55);padding:10px 12px;border-radius:8px;overflow:auto;white-space:pre-wrap;font-family:Consolas,monospace;font-size:12.5px;line-height:1.6}
+.pv-quote{border-left:3px solid hsl(var(--border));margin:12px 0;padding:2px 14px;color:hsl(var(--muted-foreground))}
+.pv-abs{background:hsl(var(--muted)/.3);border:1px solid hsl(var(--border));border-radius:10px;padding:12px 16px;margin:16px 0}
+.pv-abs-t{font-weight:700;margin-bottom:6px}
+.pv-list{padding-left:1.8em;margin:0 0 10px}
+.pv-list li{margin:4px 0}
+.pv-list p{margin:2px 0}
+.pv-center{text-align:center;margin:10px 0}
+/* KaTeX 在暗色主题下继承前景色 */
+.pv-root .katex{color:inherit;font-size:1.04em}
+.pv-root .katex-display{margin:0}
+
+</style>
+<style>
+@media print{
+  html,body{background:#fff}
+  .pv-export{max-width:none;padding:0}
+  .pv-float,.pv-eq,.pv-tab,.pv-bib{break-inside:avoid}
+  .pv-ref,.pv-cite{border-bottom:none;color:inherit}
+}
+@page{size:A4;margin:18mm 16mm}
+</style>
+</head>
+<body>
+<main class="pv-root pv-export">
+<div class="pv-title"><div class="pv-title-main">Tempo：免选举的租约定序共识协议（插件演示样例）</div><div class="pv-author">张三</div></div><div class="pv-abs"><div class="pv-abs-t">摘要</div><p>工程上广泛使用的共识协议，大多把「请求排序」与「状态持久化」这两件事都压在同一个稳定领导者身上：
+领导者一旦失效，所有写入都要等新一轮选举结束才能恢复。
+本文提出 Tempo——一种把排序权与持久化权分离的共识协议。
+排序权由按纪元（epoch）轮转的仲裁节点（arbiter）以短租约（lease）的形式授予，
+被接受的请求会拿到一枚定序令牌（Ordering Token, OT）；持久化仍然由多数派写入保证。
+仲裁节点的身份是纪元号的确定性函数，不需要通过选举产生，
+因此换主只需要一轮仲裁，不存在选举停摆期。
+在部分同步网络与崩溃失效模型下，我们给出令牌唯一性与纪元单调性两条引理，
+并据此证明 Tempo 满足线性一致性。</p></div><h2 class="pv-h pv-h2">1&nbsp;&nbsp;引言</h2><p>共识协议要解决的问题是：让一组可能失效的副本对同一个操作序列达成一致。
+Paxos&nbsp;<span class="pv-cite" title="点击跳转到文献">[3]</span> 与 Raft&nbsp;<span class="pv-cite" title="点击跳转到文献">[6]</span> 都把「先选出稳定领导者」当作前提，
+由领导者为请求排序、副本按序追加日志&nbsp;<span class="pv-cite" title="点击跳转到文献">[4]</span>。
+这个设计把复杂性收敛到了单一节点，代价是可用性也绑在了这个节点上：
+领导者失效期间，写入必须停摆到新一轮选举结束。
+下面这一行故意引用了一个不存在的 label，用于演示引用校验功能：
+参见第&nbsp;<span class="pv-ref pv-bad" title="未定义的引用（校验会标出）">?sec:intro</span>&nbsp;节的动机说明。</p><p>本文的贡献可以概括为三点：</p><ul class="pv-list"><li><p><strong>排序与持久化解耦</strong>：定序由仲裁节点单独授权，写入由多数派确认，两者互不阻塞；</p></li><li><p><strong>免选举换主</strong>：仲裁节点的身份是纪元号的确定性函数，换主不需要任何投票；</p></li><li><p><strong>可分析的快路径</strong>：正常路径 1 RTT，竞争路径 2 RTT，崩溃恢复只做尾部对齐。</p></li></ul><h2 class="pv-h pv-h2">2&nbsp;&nbsp;相关工作与设计动机</h2><p>租约（lease）最早由 Gray 与 Cheriton&nbsp;<span class="pv-cite" title="点击跳转到文献">[2]</span> 提出，
+用于在分布式文件缓存中避免反复确认；它提供了时间维度上的互斥，但本身不提供共识。
+Paxos 之后的工程实现（Multi-Paxos、ZAB、Raft）选择了「稳定领导者 + 日志复制」的路线，
+把一轮协商摊薄成常态化的领导权。
+EPaxos&nbsp;<span class="pv-cite" title="点击跳转到文献">[5]</span> 走向另一个极端：它不设领导者，用依赖集描述命令之间的偏序，
+冲突稀疏时可以单轮提交，冲突密集时则需要额外的提交轮次。
+Tempo 借用了「不过度依赖单点」这个动机，但换了一条实现路径：
+把临时排序权显式化成一枚租约，并让租约携带由多数派确认的纪元栅栏，
+从而让「排序」这件事可以直接参与安全性论证。</p><h2 class="pv-h pv-h2">3&nbsp;&nbsp;系统模型与假设</h2><p>我们考虑 <span class="pv-mini">n = 2f + 1</span> 个副本组成的集群，任意时刻最多 <span class="pv-mini">f</span> 个副本失效。
+失效模型是崩溃失效（crash-stop）：失效节点不再产生消息，也不做拜占庭行为。
+网络是部分同步的：存在一个未知时刻 GST，此后任意消息的传输延迟不超过已知上界 <span class="pv-mini">Δ</span>。
+多数派（quorum）定义为任意 <span class="pv-mini">⌈ (n+1)/2 ⌉</span> 个副本。以下三点假设贯穿全文：</p><ol class="pv-list"><li><p>副本的本地时钟只要求单调不回退，不要求彼此同步；</p></li><li><p>客户端允许重试，因此协议只需要保证「至多生效一次」的语义；</p></li><li><p>消息可能丢失、重复与乱序，但不会损坏，也不会被篡改。</p></li></ol><h2 class="pv-h pv-h2">4&nbsp;&nbsp;协议设计</h2><p>Tempo 把一次写入拆成两个可以独立推进的阶段：先向仲裁节点取定序令牌，
+再把请求按令牌顺序写入多数派。图&nbsp;<span class="pv-ref" title="点击跳转到定义">图 1</span> 给出了正常路径上的消息流。</p><figure class="pv-float"><figcaption>图 1&nbsp;&nbsp;正常路径的消息流：客户端 <span class="pv-mini">→</span> 提案节点 <span class="pv-mini">→</span> 仲裁节点 <span class="pv-mini">→</span> 多数派</figcaption></figure><h3 class="pv-h pv-h3">4.1&nbsp;&nbsp;混合逻辑时钟与纪元栅栏</h3><p>副本维护一个混合逻辑时钟（Hybrid Logical Clock, HLC）&nbsp;<span class="pv-cite" title="点击跳转到文献">[1]</span>，
+它取本地物理时间与收到的最大逻辑时间中的较大者，只要求单调不回退。
+纪元（epoch）是排序权的时间切片。当仲裁节点需要开启新纪元 <span class="pv-mini">e+1</span> 时，
+它先向 <span class="pv-mini">n-1</span> 个副本发出探测，收集其中 <span class="pv-mini">⌈ (n+1)/2 ⌉ - 1</span> 个确认，
+再按下式推进基准时钟：</p><div class="pv-eq"><div class="pv-eqbody"><span class="pv-mini pv-mini-d">t<sub>e+1</sub> = max(t<sub>e</sub>, h<sub>max</sub>) + 1</span></div><span class="pv-eqno">(1)</span></div><p>其中 <span class="pv-mini">h<sub>max</sub></span> 是确认集合 <span class="pv-mini">A</span> 中各副本报告的 HLC 的最大值。
+式&nbsp;<span class="pv-ref" title="点击跳转到定义">(1)</span> 得到的 <span class="pv-mini">t<sub>e+1</sub></span> 称为纪元栅栏：
+任何属于纪元 <span class="pv-mini">e+1</span> 的请求，其时间戳都不允许小于这道栅栏。</p><h3 class="pv-h pv-h3">4.2&nbsp;&nbsp;定序令牌与租约</h3><p>仲裁节点在纪元 <span class="pv-mini">e</span> 内为本地的序号 <span class="pv-mini">s</span> 单调递增地签发定序令牌：</p><div class="pv-eq"><div class="pv-eqbody"><span class="pv-mini pv-mini-d">OT = ⟨ e, s ⟩,   
+  ⟨ e, s ⟩ &lt; ⟨ e', s' ⟩ ⇔
+  e &lt; e' ∨ (e = e' ∧ s &lt; s')</span></div><span class="pv-eqno">(2)</span></div><p>令牌之间按字典序（lexicographic order）比较，因此任意两枚令牌都可以比出大小，
+这也让提交序列在副本之间有了唯一确定的排列。
+一枚令牌只在租约期内有效：租约时长 <span class="pv-mini">L</span> 需要在「仲裁节点的负载」与「失效检测的迟缓」之间折中，
+工程上通常取 <span class="pv-mini">L</span> 为几倍的消息往返时间。 <sup class="pv-fn">注: 本文取 <span class="pv-mini">L = 3Δ</span>，并在实现中把它做成可配置项。</sup>
+令牌有效当且仅当：</p><div class="pv-eq"><div class="pv-eqbody"><span class="pv-mini pv-mini-d">valid(OT) ⇔
+  now &lt; expire(OT) ∧
+  Arb(e) = a ∧
+  |Ack<sub>e</sub>| ≥ ⌈ (n+1)/2 ⌉</span></div><span class="pv-eqno">(3)</span></div><p>其中 <span class="pv-mini">Arb(e)</span> 是由纪元号唯一确定的仲裁节点，
+<span class="pv-mini">Ack<sub>e</sub></span> 是纪元 <span class="pv-mini">e</span> 收集到的确认集合。</p><h3 class="pv-h pv-h3">4.3&nbsp;&nbsp;正常路径与竞争路径</h3><p>正常路径上，提案节点把请求连同租约一起广播给多数派，收到多数派的写入确认后即可提交，
+总耗时为 1 RTT。若租约已经过期，或者仲裁节点在探测阶段没能在 <span class="pv-mini">L</span> 内收到足够确认，
+请求就转入竞争路径：提案节点重新收集 HLC、推进纪元栅栏，再取一枚新令牌，总耗时为 2 RTT。
+两条路径的差别只体现在延迟上，不影响安全性。</p><h2 class="pv-h pv-h2">5&nbsp;&nbsp;正确性论证</h2><p>本节给出 Tempo 的安全性论证。记号约定：<span class="pv-mini">OT<sub>x</sub></span> 表示请求 <span class="pv-mini">x</span> 的定序令牌，
+<span class="pv-mini">Ack<sub>e</sub></span> 表示纪元 <span class="pv-mini">e</span> 中收集到确认的副本集合，<span class="pv-mini">t<sub>e</sub></span> 表示纪元 <span class="pv-mini">e</span> 的基准时钟。</p><p><strong>引理 1（令牌唯一性）</strong> 同一纪元内，仲裁节点不会把同一个序号签发给两个不同的请求。
+<em>证明</em>：仲裁节点对序号 <span class="pv-mini">s</span> 的分配是本地单调递增的，而且签发之前必须通过租约有效性检查&nbsp;<span class="pv-ref" title="点击跳转到定义">(3)</span>；
+序号一旦被签发，单调性使得后续请求只能拿到更大的序号。证毕。</p><p><strong>引理 2（纪元单调性）</strong> 若纪元 <span class="pv-mini">e' &gt; e</span>，则 <span class="pv-mini">t<sub>e'</sub> &gt; t<sub>e</sub></span>。
+<em>证明</em>：推进纪元需要收集 <span class="pv-mini">⌈ (n+1)/2 ⌉ - 1</span> 个副本的确认，并按式&nbsp;<span class="pv-ref" title="点击跳转到定义">(1)</span> 取最大 HLC 再加一。
+两次推进的确认集合大小之和超过 <span class="pv-mini">n</span>，因此必存在一个副本同时出现在两次确认集合里；
+该副本的 HLC 单调不回退，于是后一次推进读到的最大值不小于前一次，即 <span class="pv-mini">t<sub>e'</sub> &gt; t<sub>e</sub></span>。证毕。</p><p><strong>定理 1（线性一致性）</strong> 在部分同步网络中，Tempo 的提交序列等价于某个顺序执行。
+<em>证明</em>：由引理 1，同一纪元内不存在两枚相同的令牌；由引理 2，纪元之间不会出现倒序。
+于是全部提交都可以按式&nbsp;<span class="pv-ref" title="点击跳转到定义">(2)</span> 的字典序排列成一个唯一的全序。
+每次提交都写入了多数派，任意两次提交的写入集合相交，交集中的副本按同一顺序追加请求，
+因此任一时刻任一读取看到的都是这个全序的前缀。证毕。</p><h2 class="pv-h pv-h2">6&nbsp;&nbsp;对比与评估</h2><p>表&nbsp;<span class="pv-ref" title="点击跳转到定义">表 1</span> 给出四类共识协议在 5 节点集群上的开销对比。</p><figure class="pv-float"><div class="pv-tabwrap"><table class="pv-tab"><tbody><tr class="pv-hr"><td style="text-align:left">
+     
+    协议 </td><td style="text-align:center"> 需领导者 </td><td style="text-align:center"> 快路径 RTT </td><td style="text-align:center"> 换主 </td><td style="text-align:center"> 恢复 </td></tr><tr class="pv-hr"><td style="text-align:left">
+     
+    Multi-Paxos </td><td style="text-align:center"> 是 </td><td style="text-align:center"> 1 </td><td style="text-align:center"> 选举·随机退避 </td><td style="text-align:center"> 补齐空洞 </td></tr><tr><td style="text-align:left">
+    Raft </td><td style="text-align:center"> 是 </td><td style="text-align:center"> 1 </td><td style="text-align:center"> 选举·随机超时 </td><td style="text-align:center"> 截断冲突 </td></tr><tr><td style="text-align:left">
+    EPaxos </td><td style="text-align:center"> 否 </td><td style="text-align:center"> 1–2 </td><td style="text-align:center"> 无需换主 </td><td style="text-align:center"> 依赖集重放 </td></tr><tr><td style="text-align:left">
+    Tempo（本文） </td><td style="text-align:center"> <strong>否</strong> </td><td style="text-align:center"> <strong>1</strong> </td><td style="text-align:center"> <strong>一轮仲裁</strong> </td><td style="text-align:center"> <strong>尾部对齐</strong> </td></tr></tbody></table></div><figcaption>表 1&nbsp;&nbsp;四类共识协议在 5 节点集群上的开销对比</figcaption></figure><p>Multi-Paxos 与 Raft 在领导者稳定时都能达到 1 RTT，但它们把可用性绑定在领导者身上：
+领导者失效之后，集群要等到选举超时（通常是 <span class="pv-mini">150∼ 300</span> ms）才能恢复服务。
+Tempo 的仲裁轮只需要一次往返，而且在 <span class="pv-mini">Δ</span> 有界的假设下是可以预期的：
+换主不需要任何节点就「谁是新仲裁者」达成共识，因为新仲裁者由纪元号直接算出。
+EPaxos 同样不需要领导者，但它的事务提交流程与命令之间的依赖关系有关，冲突密集时延迟会上升；
+Tempo 把排序权收敛到单枚租约上，因此路径长度与冲突密度无关。
+代价是仲裁节点在租约期内会成为热点。</p><h2 class="pv-h pv-h2">7&nbsp;&nbsp;局限与未来工作</h2><p>本文只讨论了单组（single-shard）场景。跨组事务需要额外引入协调者，
+这会重新带回 Tempo 试图消除的那个单点。
+另一处局限是纪元栅栏依赖时钟的单调性：如果某个副本发生时钟回退，栅栏必须显式拒绝它的确认。
+未来工作包括 
+把租约时长做成自适应参数，并在更大规模的集群上补做实验。</p><h2 class="pv-h pv-h2">8&nbsp;&nbsp;结论</h2><p>本文提出了 Tempo：一种把排序权与持久化权分离的共识协议。
+它用一枚由多数派确认过的定序令牌替代了领导者选举，使换主成为一次有界的仲裁轮。
+我们给出了令牌唯一性与纪元单调性两条引理，并据此证明了线性一致性。
+在正常路径上，Tempo 与 Raft 具有相同的往返次数，但换主过程不再需要选举停摆期。</p><div class="pv-bib"><div class="pv-bib-t">参考文献</div><div class="pv-bibitem"><span class="pv-bibno">[1]</span>  Lamport L. Time, clocks, and the ordering of events in a distributed system. Communications of the ACM, 1978.
+</div><div class="pv-bibitem"><span class="pv-bibno">[2]</span>  Gray C, Cheriton D. Leases: an efficient fault-tolerant mechanism for distributed file cache consistency. SOSP, 1989.
+</div><div class="pv-bibitem"><span class="pv-bibno">[3]</span>  Lamport L. The part-time parliament. ACM Transactions on Computer Systems, 1998.
+</div><div class="pv-bibitem"><span class="pv-bibno">[4]</span>  Lamport L. Paxos made simple. ACM SIGACT News, 2001.
+</div><div class="pv-bibitem"><span class="pv-bibno">[5]</span>  Moraru I, Andersen D G, Kaminsky M. There is more consensus in egalitarian parliaments. SOSP, 2013.
+</div><div class="pv-bibitem"><span class="pv-bibno">[6]</span>  Ongaro D, Ousterhout J. In search of an understandable consensus algorithm. USENIX ATC, 2014.
+</div></div>
+</main>
+</body>
+</html>

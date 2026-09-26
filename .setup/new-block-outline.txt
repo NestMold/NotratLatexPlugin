@@ -1,0 +1,144 @@
+/* ============ 显示条件：只有当前活动文件是 LaTeX 时才出现这张卡片 ============ */
+
+/* 当前活动文件从哪来？
+ *
+ * 首选——宿主 store。宿主编译面板源码后是以
+ *     new Function("require", "exports", "module", "React", code)(requireShim, ...)
+ * 执行的，而 requireShim 的白名单（宿主 renderer 里的 moduleMap）中就有 "@/store"，
+ * useWorkspaceStore 上挂着 currentFile。这是唯一能认出「别的格式文件」的来源。
+ *
+ * 兜底——事件桥 useActiveLatexFile()。但它只由本插件的编辑器广播，而编辑器
+ * 只声明了 "tex"，所以 .bib / .cls / .sty 永远拿不到路径（显示条件也就永远不成立）。
+ *
+ * 宿主哪天改了白名单，这里返回 known:false，静默退回事件桥：不抛错、不白屏。
+ */
+function getHostStore() {
+  try {
+    if (typeof require !== "function") return null;
+    const m = require("@/store");
+    return m && m.useWorkspaceStore ? m : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function pathOfCurrentFile(useWorkspaceStore) {
+  try {
+    const cf = useWorkspaceStore.getState().currentFile;
+    return String((cf && cf.path) || "");
+  } catch (e) {
+    return "";
+  }
+}
+
+/* 返回 { known, path }。known = 宿主是否暴露了 store（false 时交给事件桥兜底）。 */
+function useHostCurrentFilePath() {
+  const [state, setState] = useState(function () {
+    const m = getHostStore();
+    if (!m) return { known: false, path: "" };
+    return { known: true, path: pathOfCurrentFile(m.useWorkspaceStore) };
+  });
+
+  useEffect(function () {
+    const m = getHostStore();
+    if (!m) return;
+    let alive = true;
+    const sync = function () {
+      if (!alive) return;
+      const p = pathOfCurrentFile(m.useWorkspaceStore);
+      setState(function (prev) {
+        return prev.known && prev.path === p ? prev : { known: true, path: p };
+      });
+    };
+    sync();
+    const unsub = m.useWorkspaceStore.subscribe(sync);
+    return function () {
+      alive = false;
+      if (typeof unsub === "function") unsub();
+    };
+  }, []);
+
+  return state;
+}
+
+/* 宿主没有「按条件显示」的能力位 —— ui 贡献面归一化时只保留
+ * { key, pluginId, title, icon, location, content, serverId, openMode }，没有 visibleWhen。
+ * 而卡片外壳（图标 + 标题行 + 右上角悬停才现身的 ✕）是宿主自己的
+ * PanelShell / Dismissable 画的，插件只能决定卡片"内部"画什么。
+ * 所以「整张卡片不出现」只能面板自己动手，宿主 DOM 结构是：
+ *
+ *   div.notrat-plugin-slot.notrat-plugin-slot-outline      ← 挂载位容器（含「插件面板」分区标题）
+ *     └ div.relative.group/panel                           ← Dismissable：卡片壳 + ✕
+ *         └ div.notrat-plugin-panel                        ← PanelShell 卡片
+ *             ├ div.notrat-plugin-panel-header             ← 图标 + 标题行
+ *             └ div.notrat-plugin-panel-body > 本面板
+ *
+ * 向上找到最外层那个壳（走到挂载位容器就停），置 display:none，连 ✕ 一起消失；
+ * 条件恢复时原样还原，组件卸载时也还原。
+ */
+function findHostCard(el) {
+  let node = el;
+  let card = null;
+  while (node && node !== document.body) {
+    const cls = typeof node.className === "string" ? node.className : "";
+    const toks = cls ? cls.split(/\s+/) : [];
+    if (toks.indexOf("notrat-plugin-slot") >= 0) break; /* 到挂载位容器，停止，不越界动别人的东西 */
+    /* 精确 token 匹配：notrat-plugin-panel-body / -header / -outline 都不算卡片本体 */
+    if (toks.indexOf("group/panel") >= 0 || toks.indexOf("notrat-plugin-panel") >= 0) card = node;
+    node = node.parentElement;
+  }
+  return card;
+}
+
+function isRendered(node) {
+  try {
+    const cs = window.getComputedStyle(node);
+    return !!cs && cs.display !== "none" && cs.visibility !== "hidden";
+  } catch (e) {
+    return true;
+  }
+}
+
+/* 本面板是这一区唯一一张卡片时，「插件面板」那行分区标题会孤零零飘着 —— 一并收起；
+ * 还有别人的卡片露着就留着（那是别人的标题，不归我们管）。 */
+function hideOrphanSectionLabel(card) {
+  const box = card.parentElement;
+  if (!box) return null;
+  let others = [];
+  try {
+    others = Array.prototype.slice.call(box.querySelectorAll('[class*="group/panel"], .notrat-plugin-panel'));
+  } catch (e) {
+    return null;
+  }
+  for (let i = 0; i < others.length; i++) {
+    const n = others[i];
+    if (n === card || card.contains(n)) continue;
+    if (isRendered(n)) return null;
+  }
+  const label = box.firstElementChild;
+  if (!label || label === card || label.contains(card)) return null;
+  return label;
+}
+
+/* hidden=true -> 藏掉整张卡片；false -> 还原。返回挂到根节点上的 ref。 */
+function useHostCardHidden(hidden) {
+  const ref = useRef(null);
+  useEffect(
+    function () {
+      const el = ref.current;
+      if (!el || !el.parentElement) return;
+      const card = findHostCard(el);
+      if (!card) return;
+      card.style.display = hidden ? "none" : "";
+      const label = hidden ? hideOrphanSectionLabel(card) : null;
+      if (label) label.style.display = "none";
+      return function () {
+        card.style.display = "";
+        if (label) label.style.display = "";
+      };
+    },
+    [hidden]
+  );
+  return ref;
+}
+

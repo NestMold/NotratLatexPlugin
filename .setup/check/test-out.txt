@@ -1,0 +1,52 @@
+DBG lens 1186 1344
+== A. 生产者：广播 / 延迟清场 ==
+  ✓ 挂载后 sessionStorage 记下活动文件
+  ✓ 广播 1 次，detail.path 正确
+  ✓ 事件名 = notrat-latex-active-file
+  ✓ .tex->.tex 切换后仍指向新文件（未被旧实例清掉）
+  ✓ 切换过程中没有误发空路径事件
+  ✓ 卸载后 sessionStorage 已清空
+  ✓ 卸载后广播空路径（面板据此收起）
+
+== B. 消费侧纯函数 ==
+  ✓ LaTeX 扩展名判定（含大小写）
+  ✓ 非 LaTeX（md / 空 / null）判定为否
+  ✓ 新鲜快照可直接读出
+  ✓ 过期快照（>8s）不采信
+  ✓ 快照里是 .md 时不采信
+
+== C. useActiveLatexFile 行为 ==
+  ✓ 首次渲染尚未定论（ready=false）
+  ✓ 无编辑器应答 -> ready=true 且 path 为空（收起大纲）
+  ✗ ping 应答 -> 挂载即得到活动 .tex  -> {"ready":false,"path":""}
+  ✓ 切到另一个 .tex -> 桥立即跟随
+  ✓ 卸载 .tex -> 桥收到空路径，面板收起
+  ✓ 面板晚挂载 -> 用 sessionStorage 快照兜底
+
+== D. 各面板接线 ==
+  ✓ outline 有非 LaTeX 收起分支
+  ✓ outline 有非 LaTeX 收起分支
+  ✓ widget 有非 LaTeX 收起分支
+  ✓ editor-header 有非 LaTeX 收起分支
+  ✓ editor-tabs 有非 LaTeX 收起分支
+  ✓ outline 使用活动文件桥
+  ✓ outline 挂载时 ping 编辑器
+  ✓ outline 已不再回落 pickFile/sessionStorage 兜底
+  ✓ widget 使用活动文件桥
+  ✓ widget 挂载时 ping 编辑器
+  ✓ widget 已不再回落 pickFile/sessionStorage 兜底
+  ✓ main 使用活动文件桥
+  ✓ main 挂载时 ping 编辑器
+  ✓ main 已不再回落 pickFile/sessionStorage 兜底
+  ✓ editor-header 使用活动文件桥
+  ✓ editor-header 挂载时 ping 编辑器
+  ✓ editor-header 已不再回落 pickFile/sessionStorage 兜底
+  ✓ editor-tabs 使用活动文件桥
+  ✓ editor-tabs 挂载时 ping 编辑器
+  ✓ editor-tabs 已不再回落 pickFile/sessionStorage 兜底
+  ✓ editor.tsx 广播真实 filePath
+  ✓ editor.tsx 卸载时按归属令牌收场
+  ✓ editor.tsx 卸载时收场
+  ✓ main.tsx 跟随活动文件
+
+❌ 1 项未通过（共 42 项）

@@ -1,0 +1,125 @@
+{
+  "id": "notrat-latex-plugin",
+  "name": "LaTeX 助手",
+  "version": "0.9.3",
+  "description": "科研写作向的 LaTeX 插件：.tex 由插件编辑器接管（可视化 / 源码 / 分屏三档视图，切换在文件标签栏右侧的模式开关上；语法高亮、KaTeX 公式预览、编译与引用校验），左侧「章节大纲」是可点击的章节树（点条目直接跳到源码对应行），工具栏「导出」可产出 PDF 或自包含 HTML（图片内嵌、含打印样式）并在 Notrat 里直接预览，文件树右键可直接编译或校验。",
+  "type": "plugin",
+  "manifestVersion": 2,
+  "enabled": true,
+  "scope": "global",
+  "author": {
+    "name": "Notrat Community"
+  },
+  "license": "MIT",
+  "notrat": {
+    "minVersion": "1.3.3"
+  },
+  "mcpServers": [
+    {
+      "id": "latex",
+      "name": "LaTeX 工具",
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "${pluginDir}/server/index.js"
+      ],
+      "env": {
+        "LATEX_COMPILER": "${settings:compiler}",
+        "LATEX_TIMEOUT": "${settings:timeout}",
+        "LATEX_OUTLINE_DEPTH": "${settings:outlineDepth}"
+      }
+    }
+  ],
+  "contributions": {
+    "editors": [
+      {
+        "id": "latex-editor",
+        "label": "LaTeX 编辑器",
+        "extensions": [
+          "tex"
+        ],
+        "dualView": [
+          "可视化",
+          "源码"
+        ],
+        "modes": [
+          {
+            "id": "visual",
+            "label": "可视化"
+          },
+          {
+            "id": "source",
+            "label": "源码"
+          },
+          {
+            "id": "split",
+            "label": "分屏"
+          }
+        ],
+        "outlineTool": "latex_outline",
+        "sourceFile": "panels/editor.tsx"
+      }
+    ],
+    "ui": [
+      {
+        "id": "latex-outline",
+        "title": "章节大纲",
+        "icon": "🧭",
+        "location": "outline",
+        "extensions": [
+          "tex"
+        ],
+        "content": {
+          "type": "component",
+          "sourceFile": "panels/outline.tsx"
+        }
+      }
+    ],
+    "fileTreeMenus": [
+      {
+        "id": "latex-compile",
+        "label": "LaTeX 编译",
+        "icon": "⚙️",
+        "extensions": [
+          "tex"
+        ],
+        "tool": "latex_compile"
+      },
+      {
+        "id": "latex-validate",
+        "label": "LaTeX 校验引用",
+        "icon": "✅",
+        "extensions": [
+          "tex"
+        ],
+        "tool": "latex_validate"
+      }
+    ],
+    "settings": [
+      {
+        "key": "notrat-latex-plugin",
+        "title": "LaTeX 设置",
+        "fields": [
+          {
+            "key": "compiler",
+            "label": "编译引擎（留空自动探测）",
+            "type": "text",
+            "default": ""
+          },
+          {
+            "key": "timeout",
+            "label": "编译超时（秒）",
+            "type": "number",
+            "default": 120
+          },
+          {
+            "key": "outlineDepth",
+            "label": "大纲深度（0 章 / 1 节 / 2 小节 / 3 小小节）",
+            "type": "number",
+            "default": 2
+          }
+        ]
+      }
+    ]
+  }
+}
