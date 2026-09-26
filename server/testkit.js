@@ -79,12 +79,21 @@ function loadCorpus() {
       text: fs.readFileSync(path.join(CORPUS_DIR, f), "utf8"),
     });
   }
-  const reals = ["sample.tex", "test.tex"];
+  /* 真实语料：扫 samples/ 根目录的 *.tex（非递归）。
+   * 不写死文件名 —— 以前写死 ["sample.tex","test.tex"]，往目录里丢多少份都只认这两份。
+   * 构建产物（*.aux / *.log / *.pdf / *.html）不是 .tex，天然不进；
+   * .latex-history/ 在子目录里，非递归也扫不到。 */
+  let reals = [];
+  try {
+    reals = fs.readdirSync(SAMPLES_DIR)
+      .filter(function (f) { return /.tex$/.test(f); })
+      .sort();
+  } catch (e) { reals = []; }
   for (let i = 0; i < reals.length; i++) {
-    const p = path.join(SAMPLES_DIR, reals[i]);
+    const f = reals[i];
     try {
-      out.push({ name: "samples/" + reals[i], kind: "real", text: fs.readFileSync(p, "utf8") });
-    } catch (e) { /* 缺了就当没有 */ }
+      out.push({ name: "samples/" + f, kind: "real", text: fs.readFileSync(path.join(SAMPLES_DIR, f), "utf8") });
+    } catch (e) { /* 读不动就当没有 */ }
   }
   return out;
 }
