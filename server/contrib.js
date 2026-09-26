@@ -12,6 +12,9 @@
  *   backupTex           「toolHooks 编译前快照」写入 .latex-history/
  *   historyProtocol     快照清单行协议
  *   restoreSnapshot     恢复某个快照（先给当前内容再存一份）
+ *
+ * 快照 / 恢复一律按**字节**走（读不指定编码、Buffer#equals 判等、原样写回）：
+ *   .tex 可以是 UTF-16（记事本「Unicode」），按 utf8 读写会把原文件打碎。
  *   probeEngine         引擎探测（不抛错版；供 latex_env 工具与面板首屏提示）
  *   ackEngineNotice     「本机没装引擎、用户已知晓」的记账（~/.notrat/notrat-latex-state.json）
  */
@@ -431,9 +434,10 @@ function snapshots(filePath) {
  */
 function backupTex(filePath, keep) {
   const dir = histDir(filePath);
-  let cur = "";
+  /* 字节级：这里返回 Buffer，下面的判等与写盘都不做任何编解码 */
+  let cur = null;
   try {
-    cur = fs.readFileSync(filePath, "utf8");
+    cur = fs.readFileSync(filePath);
   } catch (e) {
     return { ok: false, message: "快照失败，读取源文件出错: " + e.message };
   }
@@ -444,9 +448,10 @@ function backupTex(filePath, keep) {
   }
   const snaps = snapshots(filePath);
   if (snaps.length) {
-    let prev = "";
-    try { prev = fs.readFileSync(snaps[0].path, "utf8"); } catch (e) {}
-    if (prev === cur) {
+    let prev = null;
+    try { prev = fs.readFileSync(snaps[0].path); } catch (e) {}
+    // 逐字节比：utf8 解码是有损的，两份不同字节可能解成同一个字符串（假「一致」= 丢快照）
+    if (prev && prev.equals(cur)) {
       return { ok: true, skipped: true, path: snaps[0].path, message: "源码与最近一份快照一致，本次不新增快照。" };
     }
   }
@@ -455,7 +460,7 @@ function backupTex(filePath, keep) {
   for (let k = 1; fs.existsSync(dest) && k < 1000; k++)
     dest = path.join(dir, baseName(filePath) + "." + stampNow() + "-" + k + ".tex");
   try {
-    fs.writeFileSync(dest, cur, "utf8");
+    fs.writeFileSync(dest, cur);
   } catch (e) {
     return { ok: false, message: "快照写入失败: " + e.message };
   }
@@ -492,7 +497,7 @@ function historyProtocol(filePath, limit) {
   return out.join("\n");
 }
 
-/** 恢复快照：先把当前内容再存一份，再覆盖（恢复动作本身也可回退） */
+/** 恢复快照：先把当前内容再存一份，再按字节原样覆盖（恢复动作本身也可回退） */
 function restoreSnapshot(filePath, stamp) {
   const snaps = snapshots(filePath);
   if (!snaps.length) return { ok: false, message: "没有可恢复的快照。" };
@@ -501,16 +506,17 @@ function restoreSnapshot(filePath, stamp) {
     for (let i = 0; i < snaps.length; i++) if (snaps[i].stamp === String(stamp)) target = snaps[i];
   }
   if (!target) target = snaps[0];
-  // 先把目标快照内容读进内存：之后无论安全备份那步发生什么，恢复结果都正确
-  let content = "";
+  // 先把目标快照的**原始字节**读进内存：之后无论安全备份那步发生什么，恢复结果都正确
+  let content = null;
   try {
-    content = fs.readFileSync(target.path, "utf8");
+    content = fs.readFileSync(target.path);
   } catch (e) {
     return { ok: false, message: "读取快照失败: " + e.message };
   }
   const safety = backupTex(filePath, 60);
   try {
-    fs.writeFileSync(filePath, content, "utf8");
+    // 原样写回：UTF-16 文件在这里若走 utf8 编码，快照恢复就不再是原文件
+    fs.writeFileSync(filePath, content);
   } catch (e) {
     return { ok: false, message: "恢复写入失败: " + e.message };
   }

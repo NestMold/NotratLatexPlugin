@@ -175,8 +175,8 @@ server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 | `latex_compile` | 编译 PDF（默认 xelatex，设置里可换引擎和超时） |
 | `latex_status` | 一行状态摘要（节数、图、表、式、引用、字数、错误数） |
 | `latex_asset` | 内部资产：KaTeX 离线包、图片转 dataURI（pdf/eps 走本机栅格化）、`.tex` 文件读取 |
-| `latex_backup` | 源码快照到 `.latex-history/`（需显式调用） |
-| `latex_history` | 快照列表与恢复（恢复前自动另存当前版本） |
+| `latex_backup` | 源码快照到 `.latex-history/`（需显式调用；按**字节**存，UTF-16 文件也逐字节无损） |
+| `latex_history` | 快照列表与恢复（恢复前自动另存当前版本；按**字节**原样写回，恢复前后 sha256 一致） |
 | `latex_export` | 导出 PDF / 自包含 HTML，落点可选 same、desktop、downloads、documents |
 | `latex_env` | 引擎自检：探测不编译；`action=reset` 清缓存重探（刚装完引擎时用） |
 
@@ -190,7 +190,7 @@ server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 
 ```bash
 npm install        # 只依赖 katex（预览公式资源）
-npm run gate       # ★ 验收门 27 层，全绿约 80s，任何一层红了退出非零
+npm run gate       # ★ 验收门 29 层，全绿约 80s，任何一层红了退出非零
 npm run test:core  # 内核单测
 npm run build      # 打单文件包（热更新）
 ```
@@ -242,7 +242,7 @@ npm run build      # 打单文件包（热更新）
 欢迎 Issue 和 PR：
 
 - **真实 `.tex` 语料**是最缺的——合成语料覆盖想得到的边界，真实论文才覆盖想不到的（详见 [docs/v0.9-status.md](docs/v0.9-status.md)「语料」一节）。欢迎投递可公开的论文源码（脱敏后）；
-- 改代码前先跑 `npm run gate`，PR 请保证 27 层全绿；
+- 改代码前先跑 `npm run gate`，PR 请保证 29 层全绿；
 - 提 Issue 请附最小复现 `.tex` 与 Notrat 版本号。
 
 ## 许可证

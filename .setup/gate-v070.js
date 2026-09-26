@@ -34,6 +34,12 @@
  *   [28] 多文件大纲       : 「该文件没有大纲条目」的两个真成因 —— 主文件里只有 \input、
  *                            文件存成 UTF-16（记事本「Unicode」）。展开子文件章节 +
  *                            编码嗅探，且子文件章节的 anchor 必须落回父文件那行（0.9.4 加）
+ *   [29] 快照字节级       : .latex-history 的「版本时光机」——.tex 存成 UTF-16 时，
+ *                            旧代码把快照和恢复都当字符串走 utf8 读写：快照本身就不是
+ *                            原件字节，恢复回去的也不是原件 —— 在一份根本没坏的文件上
+ *                            伪造出 diff（用户会把假的当真的去回滚）。快照 / 恢复全程
+ *                            按字节走，且**去重也要按字节**（utf8 有损解码会把两份不同
+ *                            字节解成同一个串，那时快照会被静默吃掉）（v0.9.4f 加）
  *   [26] 光标几何 / 全选   : 「鼠标点击到块末尾的时候没有看到光标呢」「在编辑器内无法全选呢」
  *                            —— 空落脚行上放零宽占位（<br> 之后没有节点时 Chromium 算不出
  *                            光标几何，rect = 0,0,0,0）；Ctrl+A 由插件自己接管（0.8.29 加，
@@ -78,6 +84,7 @@ const steps = [
   { name: "光标几何 / 全选：点块末尾有光标 + Ctrl+A 由插件自己说了算（check-v0829-caret.js）", file: ".setup/check-v0829-caret.js" },
   { name: "端到端综合：大纲跳转 / 状态栏 / 格式键真派发（test-nav.js）", file: ".setup/test-nav.js" },
   { name: "多文件大纲 + 编码嗅探：\\input 展开 / UTF-16 / 循环引用（v094-outline-multifile.js）", file: ".setup/check/v094-outline-multifile.js" },
+  { name: "快照字节级：.latex-history 的 UTF-16 快照 / 恢复逐字节无损（v094-history-bytes.js）", file: ".setup/check/v094-history-bytes.js" },
 ];
 
 let failed = 0;
