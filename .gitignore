@@ -77,3 +77,7 @@ desktop.ini
 # ---------- 11. 剪贴板临时截图（教程用图改名后才进仓库）----------
 assets/clipboard-*.png
 .setup/out-*.json
+
+# ---------- 12. 本地发布产物（正式资产在 GitHub Releases 上）----------
+/release-staging/
+/notrat-latex-plugin-*.zip
