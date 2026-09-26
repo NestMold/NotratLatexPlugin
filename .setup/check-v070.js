@@ -62,7 +62,9 @@ catch (e) {
   process.exit(1);
 }
 
-const out = path.join(os.tmpdir(), "editor-v070-check.js");
+/* v0.9.5：同上 —— esbuild 的 outfile 也是共用路径，并发时会读到没写完的模块 */
+const out = path.join(os.tmpdir(), "editor-v070-check-" + process.pid + ".js");
+process.on("exit", function () { try { fs.rmSync(out, { force: true }); } catch (e) {} });
 const r = esbuild.buildSync({
   stdin: { contents: src, loader: "tsx", resolveDir: ws, sourcefile: "editors__latex-editor.tsx" },
   outfile: out,

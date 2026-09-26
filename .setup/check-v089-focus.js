@@ -51,12 +51,16 @@ try { artRaw = fs.readFileSync(M, "utf8"); } catch (e) {}
 const artEditor = artRaw
   ? String((JSON.parse(artRaw).contributions.editors[0] || {}).source || "")
   : "";
-if (artEditor) fs.writeFileSync(path.join(DIR, "_prod-editor.js"), artEditor, "utf8");
+/* v0.9.5：中间产物一律带 pid。下面 run() 是同步 spawn，父进程写完才起子进程，但**两个父进程**
+ *   之间并不互斥：A 的子进程还在读 _tmp-focus-gate.js，B 已经把同名文件截断重写 → 语法错。
+ *   _prod-editor.js 同理（子进程运行到 harness 里那一步才去读它）。 */
+const PROD = path.join(DIR, "_prod-editor-" + process.pid + ".js");
+if (artEditor) fs.writeFileSync(PROD, artEditor, "utf8");
 
 function run(label, head, tmpName) {
   console.log("\n" + label);
   console.log("-".repeat(64));
-  const tmp = path.join(DIR, tmpName);
+  const tmp = path.join(DIR, tmpName.replace(/\.js$/, "-" + process.pid + ".js"));
   fs.writeFileSync(tmp, head + "\n" + body, "utf8");
   const r = spawnSync(process.execPath, [tmp], { stdio: "inherit", cwd: WS });
   if (r.status !== 0) fail++;
@@ -78,7 +82,7 @@ if (!artEditor) {
   console.log("  FAIL  test-nav.js 里读源码那一行变了，产物替换点找不到：" + SWAP);
   fail++;
 } else {
-  const headProd = headSrc.split(SWAP).join('path.join(WS, ".setup", "_prod-editor.js")');
+  const headProd = headSrc.split(SWAP).join(JSON.stringify(PROD));
   run("[2] 真渲染 · 装机产物（同一套断言，换源码）", headProd, "_tmp-focus-gate-prod.js");
 }
 

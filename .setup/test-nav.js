@@ -18,9 +18,16 @@ const os = require("os");
 const cp = require("child_process");
 
 const WS = "E:/notrat-latex-plugin";
-const TMP = path.join(os.tmpdir(), "latex-nav");
+/* v0.9.5：临时目录必须**每个进程一套**。旧写法共用 os.tmpdir()/latex-nav，于是并发跑两份门禁时
+ *   一份正在 esbuild 往 editor.cjs 里写、另一份已经在读它 —— 读到半截文件就报
+ *   `SyntaxError: Invalid regular expression: missing /`。这是**假红**，而且最坏的一点是
+ *   它把人指向错误的方向：看上去像源码里有语法错，实际只是两个进程共用一个临时文件。
+ *   （harness 又是被 check-v089-focus.js 以「取头部 + 换源码」的方式复用的，所以这一处
+ *   同时决定两层：test-nav.js 自己的那一层与焦点层的两个子进程。）*/
+const TMP = path.join(os.tmpdir(), "latex-nav-" + process.pid);
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(TMP, { recursive: true });
+process.on("exit", function () { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {} });
 
 let pass = 0;
 let fail = 0;
