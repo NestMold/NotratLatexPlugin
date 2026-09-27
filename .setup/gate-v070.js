@@ -35,6 +35,8 @@
  *                            文件存成 UTF-16（记事本「Unicode」）。展开子文件章节 +
  *                            编码嗅探，且子文件章节的 anchor 必须落回父文件那行（0.9.4 加）
  *   [29] 快照字节级       : .latex-history 的「版本时光机」——.tex 存成 UTF-16 时，
+ *   [30] 引擎一键安装     : 平台资产表（8 组）/ 解压回退 / 拒绝覆盖能用引擎 / 工具契约 ——
+ *                            这一路全在本机跑得好好的，到别人的 Linux 上才现形（0.9.6 加）
  *                            旧代码把快照和恢复都当字符串走 utf8 读写：快照本身就不是
  *                            原件字节，恢复回去的也不是原件 —— 在一份根本没坏的文件上
  *                            伪造出 diff（用户会把假的当真的去回滚）。快照 / 恢复全程
@@ -85,6 +87,7 @@ const steps = [
   { name: "端到端综合：大纲跳转 / 状态栏 / 格式键真派发（test-nav.js）", file: ".setup/test-nav.js" },
   { name: "多文件大纲 + 编码嗅探：\\input 展开 / UTF-16 / 循环引用（v094-outline-multifile.js）", file: ".setup/check/v094-outline-multifile.js" },
   { name: "快照字节级：.latex-history 的 UTF-16 快照 / 恢复逐字节无损（v094-history-bytes.js）", file: ".setup/check/v094-history-bytes.js" },
+  { name: "引擎一键安装：平台资产表 / 解压 / 拒绝覆盖 / 工具契约（v096-engine-install.js）", file: ".setup/check/v096-engine-install.js" },
 ];
 
 let failed = 0;

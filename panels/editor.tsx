@@ -1211,6 +1211,8 @@ export default function LatexEditor(props) {
    * 说在前面，否则用户第一反应是「插件坏了」。engineNote=null 表示不显示提示条。 */
   const [engineNote, setEngineNote] = useState(null);
   const engineProbedRef = useRef(false);
+  /* v0.9.6：一键装引擎的进度（null = 没在装）。服务端是异步的，这里只负责显示 + 轮询。 */
+  const [engineJob, setEngineJob] = useState(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [issues, setIssues] = useState(null);
@@ -2449,6 +2451,84 @@ export default function LatexEditor(props) {
       setToast({ msg: "重新检测失败：" + String(e.message || e) });
     } finally { setBusy(""); }
   }
+
+  /* ---------- v0.9.6：一键安装 TeX 引擎（Tectonic 单文件）----------
+   * 为什么是轮询、而不是把安装塞进一次工具调用里等结果：下载 10~22MB 视网络要几分钟，而 MCP 是
+   * 请求-响应 —— 等服务端跑完，调用早超时了。所以服务端立刻回 jobId，这里每 800ms 问一次。
+   * 为什么用 setTimeout 串起来而不是 setInterval：上一次没回来就不发下一次，网络抖动时不会堆请求。
+   * 装完这里做两件事：重探引擎（latex_env action=reset）+ 撤掉提示条 —— 用户不用再点任何东西。 */
+  const engineJobRef = useRef(null);   // 正在跑的任务号（null = 没在跑）
+  const enginePollRef = useRef(null);  // 轮询定时器
+  function stopEnginePoll() {
+    if (enginePollRef.current) { clearTimeout(enginePollRef.current); enginePollRef.current = null; }
+  }
+  /* 「还在跑」= 非终态。终态是 done / error / cancelled；none = 服务端压根没有任务 */
+  function engineJobActive(st) {
+    return !!(st && st.state && st.state !== "done" && st.state !== "error" && st.state !== "cancelled" && st.state !== "none");
+  }
+  async function pollEngineJob(jobId) {
+    stopEnginePoll();
+    try {
+      const st = JSON.parse(await callTool("latex_engine_install_status", { jobId: jobId }));
+      setEngineJob(st);
+      if (!engineJobActive(st)) {
+        engineJobRef.current = null;
+        if (st.state === "done") {
+          /* 先重探再报喜：latex_env 的探测结果有进程内缓存，不 reset 就会拿着旧答案说「仍未检测到」 */
+          await recheckEngine();
+          setToast({ msg: "✅ 引擎已装好：" + ((st.result && st.result.version) || "") });
+        } else if (st.state === "error") {
+          setToast({ msg: "引擎安装失败：" + (st.error || st.msg || "未知错误") });
+        }
+        return;
+      }
+      enginePollRef.current = setTimeout(function () { pollEngineJob(jobId); }, 800);
+    } catch (e) {
+      /* 查询本身失败（server 重启 / 通道抖动）：退到 2s 再试一次，别把界面直接钉成错误态 */
+      enginePollRef.current = setTimeout(function () { pollEngineJob(jobId); }, 2000);
+    }
+  }
+  async function installEngine() {
+    setBusy("install");
+    setEngineJob({ state: "queued", phase: "正在启动", msg: "已发出安装请求…", percent: 0 });
+    try {
+      const j = JSON.parse(await callTool("latex_engine_install", {}));
+      if (!j || !j.id) throw new Error((j && j.msg) || (j && j.error) || "服务端没有返回任务号");
+      engineJobRef.current = j.id;
+      setEngineJob(j);
+      pollEngineJob(j.id);
+    } catch (e) {
+      setEngineJob(null);
+      setToast({ msg: "无法开始安装：" + String(e.message || e) });
+    } finally { setBusy(""); }
+  }
+  async function cancelEngineInstall() {
+    const id = engineJobRef.current;
+    engineJobRef.current = null;
+    stopEnginePoll();
+    try { if (id) await callTool("latex_engine_install_status", { jobId: id, cancel: true }); } catch (e) {}
+    setEngineJob(null);
+    setToast({ msg: "已取消引擎安装" });
+  }
+  /* 卸载时停掉定时器：组件没了还在轮询 = 每次切档漏一个定时器 */
+  useEffect(function () {
+    return function () { stopEnginePoll(); };
+  }, []);
+  /* 提示条出现时，服务端可能还在跑上一次的任务（切档 / 重挂载）—— 续上进度条，别让它变成孤儿 */
+  useEffect(function () {
+    if (!engineNote || !serverId || engineJobRef.current) return;
+    let dead = false;
+    (async function () {
+      try {
+        const st = JSON.parse(await callTool("latex_engine_install_status", {}));
+        if (dead || !engineJobActive(st)) return;
+        engineJobRef.current = st.id;
+        setEngineJob(st);
+        pollEngineJob(st.id);
+      } catch (e) {}
+    })();
+    return function () { dead = true; };
+  }, [engineNote, serverId]);
 
   async function doCompile() {
     /* 编译读的是磁盘文件：先提交 + 保存，别拿旧文件糊弄用户 */
@@ -3953,13 +4033,33 @@ export default function LatexEditor(props) {
 
       {/* 首屏引擎提示条（v0.8.5）：只在「没装 TeX 引擎」时出现，可关 + 记住。
        *   不是常驻控件：没装引擎只影响「编译 / 导出 PDF」，其余功能全正常 —— 这句话必须写在
-       *   提示条里，否则用户会拿「插件坏了」这个错结论去排查。 */}
+       *   提示条里，否则用户会拿「插件坏了」这个错结论去排查。
+       * v0.9.6：提示条上多一个「⬇ 一键安装引擎」—— 以前只给一句 winget 命令（要管理员权限、
+       *   几百 MB、装完还得等 PATH 生效）。真正好用的那条路（Tectonic 单文件，免管理员免配 PATH）
+       *   一直只躺在 .setup/ 的开发者脚本里，用户看不到。现在把它搬到服务端、接进这个按钮。 */}
       {engineNote ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "5px 10px", fontSize: 12, lineHeight: 1.6, background: "hsl(38 92% 50% / .12)", borderBottom: "1px solid hsl(38 92% 50% / .4)" }}>
           <span>⚠ 未检测到 TeX 引擎，<b>只影响「编译 / 导出 PDF」</b>；编辑、大纲、引用校验、公式预览、导出 HTML 都正常。</span>
           <span style={{ color: "hsl(var(--muted-foreground))" }}>
             装好即用、无需配 PATH：<code style={{ fontFamily: MONO }}>{engineNote.installHint || "winget install MiKTeX.MiKTeX"}</code>
+            （点右边「一键安装引擎」也行，不必自己跑命令）
           </span>
+          {/* v0.9.6：进度就在提示条里长出来，不弹对话框 —— 装引擎是「几分钟的小事」，
+              为它挡住整个编辑器不值当。title 挂完整日志，鼠标停一下能看见每一步。 */}
+          {engineJob && (
+            <span style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", whiteSpace: "nowrap" }} title={(engineJob.log || []).join("\n")}>
+              {engineJob.state === "done" ? "✅" : (engineJob.state === "error" || engineJob.state === "cancelled") ? "⚠" : "⏳"} {engineJob.phase || engineJob.state}
+              {engineJob.state === "downloading" && engineJob.total ? " " + engineJob.percent + "%（" + (engineJob.received / 1048576).toFixed(1) + " / " + (engineJob.total / 1048576).toFixed(1) + " MB）" : ""}
+            </span>
+          )}
+          {engineJob && engineJobActive(engineJob) && (
+            <button style={tbtn} onClick={cancelEngineInstall} title="中止下载（临时文件会被清掉，不会留下半成品）">✕ 取消</button>
+          )}
+          {(!engineJob || !engineJobActive(engineJob)) && (
+            <button style={tbtnP} onClick={installEngine} disabled={busy === "install"} title="下载 Tectonic 官方单文件引擎（10~22MB，视网络 1~5 分钟）：免管理员、免配 PATH，装完自动重新检测并撤掉本提示。⚠ 首次编译 PDF 时它还要联网拉宏包。">
+              {busy === "install" ? "⏳" : "⬇"} {engineJob && engineJob.state === "error" ? "重试安装" : "一键安装引擎"}
+            </button>
+          )}
           <div style={{ flex: 1 }} />
           <button style={tbtn} onClick={recheckEngine} disabled={busy === "env"} title="清掉缓存重新探测（刚装完引擎时点它）">
             {busy === "env" ? "⏳" : "🔄"} 重新检测

@@ -8,6 +8,8 @@
  *   latex_compile  调用本机 TeX 引擎编译（xelatex/pdflatex/lualatex/latexmk，设置项可配）
  *   latex_export   导出 PDF / 自包含 HTML（v0.8.4）
  *   latex_env      探测本机 TeX 引擎（不编译、不写盘；面板首屏提示用）
+ *   latex_engine_install / latex_engine_install_status
+ *                  一键装 Tectonic 引擎（异步：立刻回 jobId，进度另查）（v0.9.6）
  *
  * ⚠ stdout 是 JSON-RPC 专线，日志一律走 stderr。
  */
@@ -21,6 +23,7 @@ const readline = require("readline");
 const CONTRIB = require("./contrib.js"); // v0.4.0 新贡献面支撑（引擎探测/大纲/状态/快照）
 const EXPORT = require("./export-html.js"); // v0.8.4 导出（自包含 HTML）
 const TEXENC = require("./tex-encoding.js"); // v0.9.4 源码读取的编码嗅探（UTF-16/BOM）
+const ENGINE_INSTALL = require("./engine-install.js"); // v0.9.6 引擎一键安装（异步任务：下载 → 解压 → 验版 → 落 ~/.notrat/tools/bin）
 
 const VERSION = "0.8.6"; // 构建时按 manifest.version 覆写
 const PLUGIN_ID = process.env.NOTRAT_PLUGIN_ID || "notrat-latex-plugin";
@@ -1022,11 +1025,40 @@ const TOOLS = [
   {
     name: "latex_env",
     description:
-      "探测本机 TeX 引擎（只查文件在不在，不编译、不写盘）：返回 JSON {ok, engine, exe, tried, fellBack, installHint, ms}。ok=false 表示没找到任何引擎——此时**只有「编译 / 导出 PDF」不可用**，编辑 / 大纲 / 引用校验 / 公式预览 / 导出 HTML 全都不受影响。action=ack 记下「用户已知晓」（不再提示）；action=reset 清缓存重新探测（刚装完引擎时用）。",
+      "探测本机 TeX 引擎（只查文件在不在，不编译、不写盘）：返回 JSON {ok, engine, exe, tried, fellBack, installHint, ms}。ok=false 表示没找到任何引擎——此时**只有「编译 / 导出 PDF」不可用**，编辑 / 大纲 / 引用校验 / 公式预览 / 导出 HTML 全都不受影响。action=ack 记下「用户已知晓」（不再提示）；action=reset 清缓存重新探测（刚装完引擎时用）。要装引擎别让用户自己跑命令：用 latex_engine_install 一键装（异步，面板提示条上也有按钮）。",
     inputSchema: {
       type: "object",
       properties: {
         action: { type: "string", enum: ["probe", "ack", "reset"], description: "probe=探测（默认）/ ack=记住已提示 / reset=清缓存重探" },
+        ...WS_PARAM,
+      },
+    },
+  },
+  {
+    name: "latex_engine_install",
+    description:
+      "一键安装 TeX 引擎（Tectonic 单文件：免管理员、免配 PATH、装到 ~/.notrat/tools/bin —— 插件探测链本来就会扫这里）。**异步**：立刻返回 {id, state, ...}，下载在后台跑（10~22MB，视网络 1~5 分钟），用 latex_engine_install_status 查进度。装完自动清引擎缓存，无需重启。三者可选覆盖：version（指定版本号，**GitHub API 不可达时用它绕开 API**）、mirror（下载镜像前缀）、force（目标已有引擎时是否覆盖，默认拒绝 —— 不毁掉能用的引擎）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        version: { type: "string", description: "指定版本号（如 0.17.0），留空取 GitHub 最新；API 被墙时填它可直接拼下载地址" },
+        mirror: { type: "string", description: "下载镜像前缀（如 https://ghproxy.net/），留空用设置项、再留空用 GitHub 官方" },
+        proxy: { type: "string", description: "网络代理，留空自动读 HTTPS_PROXY/HTTP_PROXY，填 off 强制直连" },
+        force: { type: "boolean", description: "目标位置已有引擎时是否覆盖（默认 false：拒绝，免得毁掉一个能用的引擎）" },
+        dir: { type: "string", description: "安装目录（默认 ~/.notrat/tools/bin，探测链会扫）" },
+        ...WS_PARAM,
+      },
+    },
+  },
+  {
+    name: "latex_engine_install_status",
+    description:
+      "查引擎安装进度：传 jobId 查那一个；**不传则返回最近一个任务**（面板重新挂载后据此续上进度条）。返回 JSON：{id, state, phase, msg, received, total, percent, log[], result, error}；state ∈ queued/resolving/downloading/extracting/verifying/done/error/cancelled。cancel=true 可中止。任务记录只在当前 server 进程内，服务重启后查不到。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "任务号（latex_engine_install 返回）；省略 = 查最近一个" },
+        cancel: { type: "boolean", description: "true = 中止该任务" },
         ...WS_PARAM,
       },
     },
@@ -1196,6 +1228,28 @@ async function handleToolCall(name, args) {
     if (force) CONTRIB.resetEngineCache();
     const info = CONTRIB.probeEngine(CONTRIB.envReal("LATEX_COMPILER"), resolveCompiler, { force: force });
     return JSON.stringify(Object.assign({ ack: CONTRIB.engineNoticeAck() }, info));
+  }
+  if (name === "latex_engine_install") {
+    /* ⚠ 这里**不能**等下载完再返回：10~22MB 视网络要几分钟，而 MCP 是请求-响应，
+     *   同步等 = 把工具调用堵死（宿主/面板都会先超时）。所以立刻回 jobId，真活在后台跑。
+     *   进度、取消、结果都走 latex_engine_install_status。 */
+    const job = ENGINE_INSTALL.startInstall(
+      {
+        version: args.version ? String(args.version) : "",
+        mirror: args.mirror,
+        proxy: args.proxy,
+        force: !!args.force,
+        dir: args.dir ? String(args.dir) : "",
+      },
+      { onSuccess: function () { CONTRIB.resetEngineCache(); } } // 装完立刻让探测链认得出来
+    );
+    return JSON.stringify(job);
+  }
+  if (name === "latex_engine_install_status") {
+    if (args.cancel) return JSON.stringify(ENGINE_INSTALL.cancelJob(args.jobId));
+    const j = ENGINE_INSTALL.jobStatus(args.jobId);
+    if (!j) return JSON.stringify({ ok: false, state: "none", msg: "还没有任何安装任务（任务记录不跨 server 进程）。" });
+    return JSON.stringify(j);
   }
   if (name === "latex_backup") {
     // 该工具同时作为编译前 toolHook：任何情况都不抛错，避免把编译挡下来
