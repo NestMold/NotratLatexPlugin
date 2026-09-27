@@ -80,10 +80,22 @@ const ASSET_MATRIX = {
 /* 1. 纯计算：平台 → 资产 → URL（全部可离线单测，不碰网络）              */
 /* ------------------------------------------------------------------ */
 
-/** 手动安装的兜底命令（和 contrib.js 的 installHint() 同一套口径） */
+/**
+ * 手动安装的兜底命令。
+ * **单一实现**在 contrib.js（那里会先探本机有哪个包管理器）—— 本文件不再抄一份：
+ * 「部分电脑没有 winget」这类修正如要改两处，迟早漏掉一处，然后就是
+ * 插件一处说 winget、另一处说 choco 的自相矛盾。
+ * 懒加载 + try/catch：本文件要能**单独**被 require（门禁就是这么用的），
+ * 万一 contrib 不在，也不该把一个「报个错」升级成「崩掉」。
+ */
 function manualHint(platform) {
-  if (platform === "win32") return "winget install MiKTeX.MiKTeX";
-  if (platform === "darwin") return "brew install --cask mactex-no-gui";
+  try {
+    const contrib = require("./contrib.js");
+    if (contrib && typeof contrib.manualHint === "function") return contrib.manualHint(platform);
+  } catch (e) { /* 落到下面的静态兜底 */ }
+  if (platform === "win32")
+    return "winget install MiKTeX.MiKTeX（本机若没有 winget，可直接下 https://miktex.org/download）";
+  if (platform === "darwin") return "brew install --cask mactex-no-gui（或 https://tug.org/mactex/）";
   return "sudo apt install texlive-xetex texlive-latex-recommended";
 }
 

@@ -4041,7 +4041,7 @@ export default function LatexEditor(props) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "5px 10px", fontSize: 12, lineHeight: 1.6, background: "hsl(38 92% 50% / .12)", borderBottom: "1px solid hsl(38 92% 50% / .4)" }}>
           <span>⚠ 未检测到 TeX 引擎，<b>只影响「编译 / 导出 PDF」</b>；编辑、大纲、引用校验、公式预览、导出 HTML 都正常。</span>
           <span style={{ color: "hsl(var(--muted-foreground))" }}>
-            装好即用、无需配 PATH：<code style={{ fontFamily: MONO }}>{engineNote.installHint || "winget install MiKTeX.MiKTeX"}</code>
+            装好即用、无需配 PATH：<code style={{ fontFamily: MONO }}>{engineNote.installHint || "点右边「⬇ 一键安装引擎」，不必自己跑命令"}</code>
             （点右边「一键安装引擎」也行，不必自己跑命令）
           </span>
           {/* v0.9.6：进度就在提示条里长出来，不弹对话框 —— 装引擎是「几分钟的小事」，

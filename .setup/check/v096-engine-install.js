@@ -365,6 +365,88 @@ const call = (name, args, id) => ({ jsonrpc: "2.0", id: id, method: "tools/call"
   ok("engine-install.js 已进拷贝清单", copyList.includes("engine-install.js"), copyList);
 
   /* ================================================================== */
+  section("[I] 安装指引不硬编码 winget（LTSC / Server / 删过 Store 的机器根本没有它）");
+  {
+    /* 为什么单列一层：
+     *   winget 是「App Installer」这个可选组件提供的，不是 Windows 自带命令。
+     *   把 `winget install MiKTeX.MiKTeX` 写死进指引，等于对一批用户（LTSC / Server /
+     *   精简镜像 / 删过 Store 的机器）发一条**本机跑不了**的命令 —— 他们拿到的不是帮助，
+     *   是一次「命令找不到」的二次失败。而这类机器恰恰最需要准确的下一步指引。
+     *   本层钉住三件事：① 有哪个才给哪个；② 三无时不许再提 winget，改给下载页；
+     *   ③ 跨平台（assetFor 会问 solaris/linux）不许拿本机的包管理器去猜。 */
+    const C = require(path.join(WS, "server", "contrib.js"));
+    const NO_PM = { winget: false, choco: false, scoop: false, brew: false, apt: false, dnf: false, pacman: false, zypper: false };
+
+    /* ① 纯函数逐台机器验（不依赖跑门禁的这台装了什么） */
+    const hWinget = C.installHintFor("win32", { winget: true });
+    ok("win32 有 winget → 给 winget 命令", /^winget install /.test(hWinget), hWinget);
+
+    const hChoco = C.installHintFor("win32", { choco: true });
+    ok("win32 只有 choco → 给 choco，且**不出现 winget**（不再推一条跑不了的）",
+       /^choco install /.test(hChoco) && !/winget/.test(hChoco), hChoco);
+
+    const hNone = C.installHintFor("win32", NO_PM);
+    ok("win32 三无（LTSC/Server）→ 不出现 winget install，改给官方下载页",
+       !/winget install/.test(hNone) && /miktex\.org\/download/.test(hNone), hNone);
+
+    const hBrew = C.installHintFor("darwin", { brew: true });
+    const hNoBrew = C.installHintFor("darwin", NO_PM);
+    ok("darwin：有 brew 给 brew，没有就不许再提 brew install",
+       /^brew install /.test(hBrew) && !/brew install/.test(hNoBrew), hBrew + "  ||  " + hNoBrew);
+
+    ok("linux：按发行版各给各的（apt / dnf / pacman / zypper）",
+       /^sudo apt /.test(C.installHintFor("linux", { apt: true })) &&
+       /^sudo dnf /.test(C.installHintFor("linux", { dnf: true })) &&
+       /^sudo pacman /.test(C.installHintFor("linux", { pacman: true })) &&
+       /^sudo zypper /.test(C.installHintFor("linux", { zypper: true })));
+
+    ok("linux 一个包管理器都没有 → 给 TeX Live 官方页（不是硬编一条 apt）",
+       /tug\.org\/texlive/.test(C.installHintFor("linux", NO_PM)), C.installHintFor("linux", NO_PM));
+
+    /* ② 跨平台不探测：assetFor 的错误信息会问 solaris / linux，
+     *    拿本机（可能正是 Windows）的包管理器去猜那边有什么，只会得出更荒唐的答案。 */
+    const mSolaris = EI.manualHint("solaris");
+    ok("跨平台兜底不做本机探测（solaris 仍给通用命令，不被本机污染）",
+       /apt|dnf|pacman|zypper|texlive/.test(mSolaris), mSolaris);
+    let e3 = null;
+    try { EI.assetFor("solaris", "sparc"); } catch (e) { e3 = e; }
+    ok("assetFor 的平台错误里仍带可用指引（[A] 那条没被改坏）",
+       !!e3 && /MiKTeX|mactex|apt/.test(e3.message), e3 && e3.message);
+
+    /* ③ 单一实现：engine-install 的 manualHint 必须走 contrib，不许自己再抄一份
+     *    （抄两份 = 下次再修 winget 只改一处，然后插件自己前后矛盾） */
+    const eiSrc = fs.readFileSync(path.join(WS, "server", "engine-install.js"), "utf8");
+    ok("engine-install.js 的 manualHint 委托 contrib（不重复实现）",
+       /require\("\.\/contrib\.js"\)/.test(eiSrc) && /contrib\.manualHint/.test(eiSrc));
+
+    /* ④ 本机真探：探到的必须就是「这台能给的那条」 */
+    const pm = C.packageManagers();
+    const live = C.installHint();
+    ok("本机探测结果与指引自洽（本机没 winget 就不许出现 winget install）",
+       pm.winget === true || !/winget install/.test(live), live + "   [本机 " + JSON.stringify(pm) + "]");
+    if (process.platform === "win32" && !pm.winget) {
+      ok("本机（无 winget）→ 指引不推 winget，改推本机真有的或下载页",
+         !/winget install/.test(live) && (/choco/.test(live) || /scoop/.test(live) || /miktex\.org/.test(live)), live);
+    } else {
+      console.log("  --    本机 " + process.platform + " winget=" + pm.winget + "，跳过「无 winget 机器」那条实机断言");
+    }
+    ok("包管理器探测有缓存（冷路径只探一次，别在每次探测引擎时都扫 PATH）",
+       C.packageManagers() === C.packageManagers(),
+       "缓存对象应是同一个引用；resetPmCache 可清");
+    C.resetPmCache();
+    ok("resetPmCache 能清掉（换 PATH 后重探用）", typeof C.resetPmCache === "function" && (C.packageManagers(), true));
+
+    /* ⑤ 面板里不许再有写死的 winget 兜底文案 */
+    const panelSrc = fs.readFileSync(path.join(WS, "panels", "editor.tsx"), "utf8");
+    ok("面板提示条没有写死的 winget 兜底文案", !/installHint \|\| "winget/.test(panelSrc));
+
+    /* ⑥ hasCmd 边界：不存在的命令要返回 false，不能抛（它跑在「用户没装引擎」这条路上，
+     *    这条路再抛异常，用户看到的就是「插件整个没反应」） */
+    ok("hasCmd 对不存在的命令返回 false（不抛）",
+       C.hasCmd("definitely-no-such-cmd-" + Date.now()) === false);
+  }
+
+  /* ================================================================== */
   if (process.env.NOTRAT_ENGINE_E2E === "1") {
     section("[H] 真下载（NOTRAT_ENGINE_E2E=1）：约 20MB，装到临时目录，装完即删");
     const tdir = mkTemp("ei-e2e-");

@@ -5,7 +5,7 @@
 > - 顺序是**写作顺序**，不是语义化版本顺序：有些补丁版是在后续版本之后才补记的（例如 §v0.4.1 排在 §v0.4.0 之前）。
 > - 「版本速览」= 原 README 开头那面版本摘要墙，原样保留。
 > - 各节里形如「详见 §v0.7.2」的交叉引用都指向本文件内的章节。
-> - 当前 `manifest.json` 版本为 **0.9.6**，本日志记录到 **v0.9.6**。
+> - 当前 `manifest.json` 版本为 **0.9.7**，本日志记录到 **v0.9.7**。
 > - ⚠ **v0.8.28 … v0.9.5 这八条是补记的**（当时只写了代码与验收层，日志一直欠着）。
 >   取证来源是代码注释、`.setup/gate-v070.js` 的层清单与 `docs/`，每条开头都标了取证位置。
 >   补记能保证的是**结论可复核**（照位置读、照命令跑），不能保证的是当时的措辞与情绪 ——
@@ -58,6 +58,7 @@
 - [v0.9.4 — 多文件大纲（`\input` 展开）+ 编码嗅探（UTF-16）](#v094--多文件大纲（input-展开）-编码嗅探（utf-16）)
 - [v0.9.5 — 快照 / 恢复按字节走（「版本时光机」不再改坏 UTF-16 的 `.tex`）](#v095--快照--恢复按字节走（「版本时光机」不再改坏-utf-16-的-tex）)
 - [v0.9.6 — 引擎一键安装（把 `.setup/` 里那份只有开发者看得见的脚本，接进用户能点的按钮）](#v096--引擎一键安装（把-setup-里那份只有开发者看得见的脚本，接进用户能点的按钮）)
+- [v0.9.7 — 安装指引不再硬编码 winget（LTSC / Server / 删过 Store 的机器上，那条命令根本不存在）](#v097--安装指引不再硬编码-winget（ltcs--server--删过-store-的机器上，那条命令根本不存在）)
 
 ---
 
@@ -3070,3 +3071,130 @@ HTTP 400 Bad Request ← https://api.github.com/repos/tectonic-typesetting/tecto
    解压失败时列出试过哪些命令 —— 这三个「说不」的地方，恰好是用户最需要信息的地方。
 4. **搬实现之前先看一眼它为什么没被搬过来。** `.setup/install-tectonic.js` 躺了半年没人用，
    不是因为它不好，而是因为它没接到用户够得着的地方。功能没接进 UI，等于没做。
+
+---
+
+## v0.9.7 — 安装指引不再硬编码 winget（LTSC / Server / 删过 Store 的机器上，那条命令根本不存在）
+
+**取证位置**：`server/contrib.js`（`hasCmd` / `packageManagers` / `installHintFor` / `manualHintFor`）、
+`server/engine-install.js`（`manualHint` 收敛为委托）、`panels/editor.tsx`（提示条兜底文案）、
+`.setup/check-v085-env-banner.js`（门禁第 11 层断言改写）、`.setup/check/v096-engine-install.js`（第 30 层新增 [I] 段）。
+
+### 一、起因：一句写给「Windows」的指引，其实只写给「有 winget 的 Windows」
+
+上一版把「一键安装引擎」接进了首屏提示条，剩下的文案里还留着一句手动兜底：
+
+```
+winget install MiKTeX.MiKTeX
+```
+
+问题是 **winget 不是 Windows 自带的命令**。它是 Win10 1809+ 的 App Execution Alias，挂在
+「应用商店 / App Installer」这个**可选组件**上。下面这些机器全都没有它：
+
+- Windows 10 LTSC / Server 全系（长期服务版按设计就不带 Store）
+- 企业镜像里删掉了 Microsoft Store 的机器
+- 更早的 Win10，以及从 Win7 / 8 升上来没补 App Installer 的机器
+- 用精简镜像装完的系统
+
+这四类机器拿到的不是帮助，是一次**「命令找不到」的二次失败** —— 然后用户会来问
+「为什么你的插件让我跑的命令不存在」。而它们恰恰最需要一个准确的下一步。
+
+> 注：这不是纸面担忧。**跑门禁这台机器本身就没有 winget**（`{"winget":false,"choco":true,"scoop":false}`）——
+> 旧代码在这台机器上给出的正是那条跑不了的命令。
+
+### 二、改法：先问本机有什么，再决定说什么
+
+| 本机情况 | 提示条给什么 |
+|---|---|
+| 有 winget | `winget install MiKTeX.MiKTeX    （或 https://miktex.org/download）` |
+| 只有 choco | `choco install miktex` —— **不再出现 winget** |
+| 只有 scoop | `scoop install latex` |
+| 三个都没有（LTSC / Server / 精简镜像） | 直说「本机没有 winget / choco / scoop」，给 `https://miktex.org/download` |
+| macOS 有 brew | `brew install --cask mactex-no-gui` |
+| macOS 没有 brew | 给 `https://tug.org/mactex/` |
+| Linux | 按发行版各给各的（apt / dnf / pacman / zypper），一个都没有就给 TeX Live 官方页 |
+
+实现上钉住了四件事：
+
+1. **`hasCmd()` 只查文件在不在，不起子进程。** 为什么不 `fs.accessSync` 一次就完事：
+   Windows 的 winget 是 App Execution Alias（重解析点），个别机器的 PATH 里看不到，
+   但它确实在 `WindowsApps` 目录下 —— 所以 PATH 扫不到时补扫一次那个目录，
+   避免「明明有 winget 却说没有」。
+2. **探测结果进程内缓存**（`packageManagers()` / `resetPmCache()`）。这条路径只在「没装引擎」
+   时走到，且最多走一次；不缓存的话每次探测引擎都要全扫一遍 PATH。
+3. **判定逻辑全部拆成纯函数**（`installHintFor(platform, pm)` / `manualHintFor(platform, pm)`）——
+   几台机器的组合都能离线单测，**不依赖跑门禁的那台装了什么**。
+4. **跨平台一律不探测。** `assetFor()` 的错误信息会问 `solaris` / `linux` 这种非本机平台，
+   拿本机的包管理器去猜那边有什么，只会得出更荒唐的答案。
+
+**同一件事的两份实现也收了。** `server/engine-install.js` 里原本自己抄了一份 `manualHint`，
+现在改成委托 `contrib.js`（抄两份 = 下次再修 winget 只改一处，然后插件自己前后矛盾）。
+委托是懒加载 + `try/catch` —— 这个文件仍然要能被**单独** require（门禁就是这么用的），
+万一 contrib 不在，也不该把一个「报个错」升级成「崩掉」。
+
+**面板**那句写死的兜底也换了：`installHint || "winget install MiKTeX.MiKTeX"`
+→ `installHint || "点右边「⬇ 一键安装引擎」，不必自己跑命令"`。
+
+### 三、门禁自己身上是同一个毛病（这一版最该记的一条）
+
+改完之后发现，验收层里的断言长这样：
+
+```js
+ok("installHint 与当前平台相符",
+   process.platform === "win32" ? hint.includes("winget") :
+   process.platform === "darwin" ? hint.includes("mactex") : hint.includes("apt"), hint);
+```
+
+它把「Windows 平台的安装指引」**等同于**「winget」—— 于是这条门禁会反过来**逼着**代码去推一条
+本机跑不了的命令。**断言和被修的 bug 是同款**：只要 winget 那条线还在，门禁就一直绿着守着错误行为。
+
+判据改成「与**本机真有的**相符」，并加了两条负向断言：
+
+- 本机没有 winget 时，指引里**不许出现** `winget install`（不许推一条跑不了的命令）；
+- 三个包管理器一个都没有时，指引里**必须有下载页**（用户总要有下一步可走）。
+
+### 四、验证
+
+**① 门禁：30/30 全绿（85.3s）。** 两层有改动：
+
+- **第 30 层**（`v096-engine-install.js`）新增 `[I] 安装指引不硬编码 winget` 段，**95/95**（原 80 项 → +15 项）：
+  纯函数逐台机器验（有 winget 给 winget / 只有 choco 给 choco 且**不出现 winget** / 三无必须给下载页 /
+  macOS 有无 brew 两条 / Linux 四种发行版 + 一种都没有）；
+  跨平台不被本机污染（`solaris` 仍给通用命令，`assetFor` 的平台错误里仍带可用指引）；
+  单一实现（`engine-install.js` 的 `manualHint` 必须走 contrib）；
+  本机真探（探到的必须就是这台能给的那条，**本机无 winget 时走的就是这条实机断言**）；
+  缓存与会话清理；面板里不许再有写死的 winget 兜底；`hasCmd` 对不存在的命令返回 `false` 而不抛。
+- **第 11 层**（`check-v085-env-banner.js`）**58 项全绿**（原 57 项 → 断言改写 + 2 项新增）。
+
+**② 装机产物按字节核**（`npm run build` 之后看盘上的字节，不看构建日志）：
+
+- `~/.notrat/tools/{contrib,engine-install,export-html,preview-core,pdf-raster,tex-encoding}.js`
+  与 `server/` 下同名文件 **cmp 逐字节相同**（6/6）
+- `~/.notrat/tools/latex-server.js` → `const VERSION = "0.9.7"`
+- `~/.notrat/plugins/notrat-latex-plugin.json` → `version 0.9.7` / `enabled true` /
+  env 含 `LATEX_MIRROR` + `LATEX_NET_PROXY` / `editors.source` 276409 字符
+- 工作区没被构建弄脏（`git status` 只有本次改的那几个文件；`server/assets-katex.json` 重写但字节未变）
+
+**③ 本机真探**（这台机器正好是缺陷的现场）：
+
+```
+本机 platform = win32
+packageManagers() = {"winget":false,"choco":true,"scoop":false}
+installHint()  = choco install miktex    （或 https://miktex.org/download）
+```
+
+旧代码在这台机器上给的是 `winget install MiKTeX.MiKTeX`（跑不了）；新代码给的是它真有的那条。
+
+### 五、教训
+
+1. **「平台对不对」和「这台机器能不能跑」是两件事。** 平台判断（`process.platform === "win32"`）
+   只说明「这条命令是为 Windows 写的」，不说明「这条命令在这台 Windows 上存在」。
+   把可选组件当成系统自带，是同一类错误的常见变体（`curl`、`tar`、PowerShell 版本也都是）。
+2. **错误的断言比没有断言更坏 —— 它会替 bug 站岗。** 那条 `hint.includes("winget")` 写下来的时候
+   看着挺合理（Windows 就给 winget 啊），实际上把错误行为钉成了契约。
+   凡是「断言某个具体实现」的地方，都要回头问一句：**这个实现是用户要的，还是我顺手写的？**
+3. **给不出建议时要说「我不知道」，并且给一条总有下一步的退路。** 三个包管理器都没有时，
+   直说没有 + 给官网下载页，比沉默和比硬编一条 apt 都好 —— 用户至少知道下一步往哪走。
+4. **同一个判断出现在两个文件里，迟早会分叉。** `engine-install.js` 那份抄来的 `manualHint`
+   本身没错，但它意味着「下次改一处、漏一处」，然后插件自己前后矛盾（一处说 winget、一处说 choco）。
+   收敛成单一实现 + 懒加载委托，比两边同时改对更靠得住。

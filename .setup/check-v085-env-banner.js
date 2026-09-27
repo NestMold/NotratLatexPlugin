@@ -125,13 +125,35 @@ section("[3] 文案红线：必须说清「只影响编译 PDF」，且给可复
   ok("说明了「无需配 PATH」", banner.includes("无需配 PATH"));
   ok("两个出口都在：重新检测 / 知道了", banner.includes("重新检测") && banner.includes("知道了"));
 
-  /* 服务端侧：不装引擎的机器上，installHint 必须是**这个平台能直接粘的命令** */
+  /* 服务端侧：不装引擎的机器上，installHint 必须是**这个平台能直接粘的命令**。
+   *
+   * v0.9.7 修：这条断言原来写的是 `process.platform === "win32" ? hint.includes("winget")` ——
+   *   它把「Windows 平台的安装指引」等同于「winget」了。而 winget 是 App Installer
+   *   这个**可选组件**提供的，LTSC / Server / 精简镜像 / 删过 Store 的机器都没有。
+   *   于是这条门禁会**逼着**代码去推一条本机跑不了的命令 —— 断言和被修的 bug 同款。
+   *   判据改成「与**本机真有的**相符」：有哪个包管理器就给哪个；一个都没有，就必须给下载页。 */
   const C = require(path.join(WS, "server", "contrib.js"));
   const hint = C.installHint();
   ok("installHint 非空且是可复制命令", typeof hint === "string" && hint.length > 15, hint);
-  ok("installHint 与当前平台相符",
-     process.platform === "win32" ? hint.includes("winget") :
-     process.platform === "darwin" ? hint.includes("mactex") : hint.includes("apt"), hint);
+
+  const pm = C.packageManagers();
+  const noWinPm = !pm.winget && !pm.choco && !pm.scoop;
+  const winOk =
+    (pm.winget && /winget install/.test(hint)) ||
+    (pm.choco && /choco install/.test(hint)) ||
+    (pm.scoop && /scoop install/.test(hint)) ||
+    (noWinPm && /miktex\.org\/download/.test(hint));
+  const macOk = pm.brew ? /brew install/.test(hint) : /tug\.org\/mactex/.test(hint);
+  ok("installHint 与当前平台相符，且与本机真有的包管理器一致",
+     process.platform === "win32" ? winOk :
+     process.platform === "darwin" ? macOk : /apt|dnf|pacman|zypper|texlive/.test(hint),
+     hint + "   [本机 " + JSON.stringify(pm) + "]");
+
+  /* 修复的核心：不许推一条本机跑不了的命令（用户拿到的是「命令找不到」的二次失败） */
+  ok("installHint 不推本机没有的命令（LTSC/Server 上不再出现 winget install）",
+     !(process.platform === "win32" && !pm.winget && /winget install/.test(hint)), hint);
+  ok("installHint 对本机没有任何包管理器的情况给了下载页（总有下一步可走）",
+     !(process.platform === "win32" && noWinPm && !/miktex\.org\/download/.test(hint)), hint);
 }
 
 /* ================================================================== */

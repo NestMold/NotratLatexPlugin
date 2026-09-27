@@ -45,6 +45,27 @@ function whichSync(name) {
   return null;
 }
 
+/**
+ * PATH 里有没有这个命令 —— 只查文件在不在，**不起子进程**。
+ * 为什么不 fs.accessSync 一次就完事：Windows 的 winget 是 App Execution Alias
+ * （重解析点），个别机器的 PATH 里看不到，但它确实在 WindowsApps 目录下。
+ * 所以 PATH 扫不到时补扫一次那个目录，避免「明明有 winget 却说没有」。
+ */
+function hasCmd(name) {
+  if (whichSync(name)) return true;
+  if (process.platform === "win32") {
+    const wa = path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps");
+    const exts = ["", ".exe", ".cmd", ".bat"];
+    for (let i = 0; i < exts.length; i++) {
+      try {
+        fs.accessSync(path.join(wa, name + exts[i]), fs.constants.X_OK);
+        return true;
+      } catch (e) {}
+    }
+  }
+  return false;
+}
+
 /** 常见安装位置兜底探测 */
 function probeDirs(name) {
   const exts = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
@@ -117,13 +138,113 @@ function pickCompiler(raw, legacyResolve) {
 
 let _engineCache = null;   // 进程内缓存：PATH 全扫一遍不便宜，一次探测之后瞬答
 
-/** 分平台安装指引（只给命令，不替用户下载 51MB 二进制 —— 那是懒，不是不知道） */
+/* 为什么不能把 `winget install MiKTeX.MiKTeX` 写死：
+ *   winget 不是 Windows 自带命令，它是 Win10 1809+ 的 App Execution Alias，
+ *   且挂在「应用商店 / App Installer」这个可选组件上。下面这些机器**都没有**：
+ *     · Windows 10 LTSC / Server 全系（长期服务版按设计就不带 Store）
+ *     · 企业镜像里删掉了 Microsoft Store 的机器
+ *     · 更早的 Win10、以及从 Win7/8 升上来没补 App Installer 的机器
+ *     · 用精简镜像装完的系统
+ *   而这类机器恰恰最需要一条准确指引（用户手里没有别的路子可试）。
+ *   给一条本机跑不了的命令，用户拿到的不是帮助，是一次「命令找不到」的二次失败 ——
+ *   然后他会来问「为什么你的插件让我跑的命令不存在」。
+ *   所以：先问本机有哪个包管理器，再决定给哪条命令；一个都没有就直说，
+ *   并把「官方下载页 + 插件自己的一键安装」摆到前面。
+ *
+ * 探测结果进程内缓存：这条路径只在「没装引擎」（冷启动、用户新装机）时走到，
+ * 且最多走一次；缓存之后是纯内存读。 */
+
+let _pmCache = null;
+
+/** 本机有哪些包管理器（进程内缓存；只查文件在不在，不起子进程） */
+function packageManagers() {
+  if (_pmCache) return _pmCache;
+  const p = process.platform;
+  if (p === "win32") {
+    _pmCache = { winget: hasCmd("winget"), choco: hasCmd("choco"), scoop: hasCmd("scoop") };
+  } else if (p === "darwin") {
+    _pmCache = { brew: hasCmd("brew") };
+  } else {
+    _pmCache = {
+      apt: hasCmd("apt-get") || hasCmd("apt"),
+      dnf: hasCmd("dnf"),
+      pacman: hasCmd("pacman"),
+      zypper: hasCmd("zypper"),
+    };
+  }
+  return _pmCache;
+}
+
+/** 清掉包管理器探测缓存（门禁 / 换 PATH 后重探用） */
+function resetPmCache() {
+  _pmCache = null;
+}
+
+/**
+ * 纯函数版：给定平台与本机包管理器清单 → 面板提示条上的安装指引。
+ * 与 manualHintFor 同一套口径，只是措辞更适合直接贴在提示条里。
+ * @param {string} platform
+ * @param {object} pm 本机包管理器 {winget,choco,scoop,brew,apt,dnf,pacman,zypper}
+ */
+function installHintFor(platform, pm) {
+  pm = pm || {};
+  if (platform === "win32") {
+    if (pm.winget) return "winget install MiKTeX.MiKTeX    （或 https://miktex.org/download）";
+    if (pm.choco) return "choco install miktex    （或 https://miktex.org/download）";
+    if (pm.scoop) return "scoop install latex    （或 https://miktex.org/download）";
+    return "本机没有 winget / choco / scoop —— 直接下 MiKTeX 安装包：https://miktex.org/download";
+  }
+  if (platform === "darwin") {
+    if (pm.brew) return "brew install --cask mactex-no-gui    （或 https://tug.org/mactex/）";
+    return "本机没有 brew —— 直接下 MacTeX 安装包：https://tug.org/mactex/";
+  }
+  /* linux 与其余平台：按发行版给 */
+  if (pm.apt) return "sudo apt install texlive-full    （最小可用：texlive-xetex texlive-latex-recommended）";
+  if (pm.dnf) return "sudo dnf install texlive-scheme-medium";
+  if (pm.pacman) return "sudo pacman -S texlive-basic";
+  if (pm.zypper) return "sudo zypper install texlive-xetex";
+  return "从发行版仓库装 TeX Live：https://tug.org/texlive/";
+}
+
+/**
+ * 纯函数版：给定平台与本机包管理器清单 → 一句「手动装 TeX 发行版」的兜底命令。
+ * 跨平台时不探测（见 manualHint）：拿本机的包管理器去推断别的平台只会更荒唐。
+ */
+function manualHintFor(platform, pm) {
+  pm = pm || {};
+  if (platform === "win32") {
+    if (pm.winget) return "winget install MiKTeX.MiKTeX";
+    if (pm.choco) return "choco install miktex";
+    if (pm.scoop) return "scoop install latex";
+    return "直接从 MiKTeX 官网下载安装包：https://miktex.org/download";
+  }
+  if (platform === "darwin") {
+    if (pm.brew) return "brew install --cask mactex-no-gui";
+    return "直接从 MacTeX 官网下载安装包：https://tug.org/mactex/";
+  }
+  if (pm.apt) return "sudo apt install texlive-xetex texlive-latex-recommended";
+  if (pm.dnf) return "sudo dnf install texlive-scheme-medium";
+  if (pm.pacman) return "sudo pacman -S texlive-basic";
+  if (pm.zypper) return "sudo zypper install texlive-xetex";
+  return "sudo apt install texlive-xetex texlive-latex-recommended";
+}
+
+/** 分平台安装指引（本机没有那个命令就不给那条命令） */
 function installHint() {
-  if (process.platform === "win32")
-    return "winget install MiKTeX.MiKTeX    （或 https://miktex.org/download）";
-  if (process.platform === "darwin")
-    return "brew install --cask mactex-no-gui    （或 https://tug.org/mactex/）";
-  return "sudo apt install texlive-full    （最小可用：texlive-xetex texlive-latex-recommended）";
+  return installHintFor(process.platform, packageManagers());
+}
+
+/**
+ * 手动安装 TeX 发行版的兜底命令。
+ * @param {string} [platform] 目标平台，默认本机。
+ *   **跨平台时一律不探测**：assetFor() 的错误信息会问 solaris / linux 这种
+ *   非本机平台，拿本机的包管理器去猜那边有什么，只会得出更荒唐的答案。
+ * @param {object} [pm] 显式指定包管理器清单（门禁单测用；不传则按需探测）
+ */
+function manualHint(platform, pm) {
+  const p = platform || process.platform;
+  const probe = p === process.platform;
+  return manualHintFor(p, pm || (probe ? packageManagers() : {}));
 }
 
 /**
@@ -560,6 +681,12 @@ module.exports = {
   probeEngine: probeEngine,
   resetEngineCache: resetEngineCache,
   installHint: installHint,
+  installHintFor: installHintFor,
+  manualHint: manualHint,
+  manualHintFor: manualHintFor,
+  packageManagers: packageManagers,
+  resetPmCache: resetPmCache,
+  hasCmd: hasCmd,
   readState: readState,
   writeState: writeState,
   engineNoticeAck: engineNoticeAck,
