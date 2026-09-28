@@ -2382,18 +2382,36 @@ export default function LatexEditor(props) {
   }, [pluginId, content]);
 
   /* ---------- MCP 工具通路 ---------- */
-  useEffect(() => {
-    let dead = false;
-    (async () => {
+  /* v0.9.9：解析本插件 MCP server 的活跃 id，**带重试**。
+   *
+   * 为什么必须重试：宿主是异步拉起插件 server 的，面板挂载（= 第一次打开 .tex）常常
+   * 早于 server 就绪。旧实现只在挂载时问一次 listActiveServers()（deps=[]，没有第二
+   * 次），问不到就永远问不到 → serverId 一直是空 → 依赖它的三件事全哑：
+   * 首屏「没装引擎」提示条不弹、latex_outline 拿不到东西、按钮点了报未知工具。
+   * 这不是「偶尔慢」，是每次都可能踩到的启动竞态。 */
+  async function resolveServerId(tries, gapMs) {
+    const n = tries || 20;
+    const gap = gapMs || 300;
+    const api = window.electronAPI;
+    if (!api || !api.mcp || !api.mcp.listActiveServers) return "";
+    for (let i = 0; i < n; i++) {
       try {
-        const api = window.electronAPI;
-        if (!api || !api.mcp || !api.mcp.listActiveServers) return;
         const servers = await api.mcp.listActiveServers();
         const mine = (servers || []).find(
           (s) => s && typeof s.id === "string" && s.id.indexOf("plugin-" + pluginId + "-") === 0
         );
-        if (!dead && mine) setServerId(mine.id);
+        if (mine && mine.id) return mine.id;
       } catch (e) {}
+      if (i < n - 1) await new Promise((r) => setTimeout(r, gap));
+    }
+    return "";
+  }
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      const id = await resolveServerId();
+      if (!dead && id) setServerId(id);
     })();
     return () => { dead = true; };
   }, []);
@@ -2401,7 +2419,21 @@ export default function LatexEditor(props) {
   async function callTool(tool, args) {
     const api = window.electronAPI;
     if (!api || !api.mcp || !api.mcp.callTool) throw new Error("宿主 MCP 通道不可用");
-    const sid = serverId || "plugin-" + pluginId + "-latex";
+    /* 空值时先**去解析**（面板可能比 server 先挂载），仍然解析不到就明确报错。
+     * 绝不拿猜的 id 发出去：猜错时宿主会掉进内置文件系统的兜底分支，把
+     * 「服务没起来」说成「Unknown tool: <工具名>」—— 那句话跟 LaTeX 无关，
+     * 每次都会把排查方向带偏。宁可信噪，也不要这种假线索。 */
+    let sid = serverId;
+    if (!sid) {
+      sid = await resolveServerId(10, 300);
+      if (sid) setServerId(sid);
+    }
+    if (!sid) {
+      throw new Error(
+        "LaTeX 服务未启动：插件 MCP server 未连接（确认插件已启用、本机有 Node.js ≥18；" +
+          "若是刚装/刚更新，请完全退出 Notrat 再启动 —— 重载窗口不会重建 MCP 连接）"
+      );
+    }
     const r = await api.mcp.callTool(sid, tool, args);
     if (!r || r.success === false) throw new Error((r && r.error) || "工具调用失败");
     return ((r.result && r.result.content) || []).map((c) => c.text).join("\n");

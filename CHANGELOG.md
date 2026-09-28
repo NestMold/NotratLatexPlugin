@@ -60,6 +60,7 @@
 - [v0.9.6 — 引擎一键安装（把 `.setup/` 里那份只有开发者看得见的脚本，接进用户能点的按钮）](#v096--引擎一键安装（把-setup-里那份只有开发者看得见的脚本，接进用户能点的按钮）)
 - [v0.9.7 — 安装指引不再硬编码 winget（LTSC / Server / 删过 Store 的机器上，那条命令根本不存在）](#v097--安装指引不再硬编码-winget（ltcs--server--删过-store-的机器上，那条命令根本不存在）)
 - [v0.9.8 — 单文件包把 MCP server 的路径写成了构建机的绝对路径（换台机器就全灭，且全程不报错）](#v098--单文件包把-mcp-server-的路径写成了构建机的绝对路径（换台机器就全灭，且全程不报错）)
+- [v0.9.9 — 面板拿猜的 serverId 硬发：把「服务没起来」说成「Unknown tool」](#v099--面板拿猜的-serverid-硬发把服务没起来说成unknown-tool)
 
 ---
 
@@ -3371,3 +3372,145 @@ PID 27720   node  C:\Users\Administrator\.notrat\plugins/notrat-broadcast/server
 > **本版没动的**：插件面板那次探测照旧 `catch (e) {}` 吞异常。它当初的意图是
 > 「老宿主没有这个工具时别报错」，要区分「工具不存在」和「整个通道都不在」，得另开一版。
 > 这里先把症状写全 —— 宿主行为改不了，至少要让人搜得到。
+
+## v0.9.9 — 面板拿猜的 serverId 硬发：把「服务没起来」说成「Unknown tool」
+
+**取证位置**：`panels/editor.tsx`（`resolveServerId()` 带重试；`callTool()` 不再拿猜的 id 发），
+`.setup/build-singlefile.js`（文件末尾新增 **F 组**断言：面板调用点 vs 部署产物的 `tools/list`），
+`.setup/doctor.js`（新增：换机器 / 首次安装后的体检脚本），`manifest.json`（版本 0.9.9）。
+
+### 一、这一版是 v0.9.8 文末自己欠下的
+
+上一版最后留了一句：
+
+> **本版没动的**：插件面板那次探测照旧 `catch (e) {}` 吞异常。它当初的意图是
+> 「老宿主没有这个工具时别报错」，要区分「工具不存在」和「整个通道都不在」，得另开一版。
+
+这就是那一版。起因是 0.9.8 修完路径之后，盘上的产物**已经没问题**，可换到新机器上，
+用户看到的仍然是同一句话：
+
+```
+unknown tool: latex_engine_install
+```
+
+包是对的、server 也在跑，这句话还是出来了 —— 说明病灶不在「server 起没起来」，
+在**面板去够 server 的那条路**。
+
+### 二、不是防御性编程：这是一场每次都可能踩到的启动竞态
+
+面板解析自己那条 MCP 连接只有一次机会：
+
+```js
+useEffect(() => {
+  (async () => {
+    const servers = await api.mcp.listActiveServers();
+    const mine = (servers || []).find((s) => s.id.indexOf("plugin-" + pluginId + "-") === 0);
+    if (!dead && mine) setServerId(mine.id);
+  })();
+  return () => { dead = true; };
+}, []);                                    // ← deps 是空的：没有第二次
+```
+
+`deps: []` 意味着**只问一次**。而宿主是**异步**拉起插件 server 的：面板挂载的时机是
+「用户第一次打开 `.tex`」，它跟 server 的启动**没有先后保证**。问早了，`mine` 是空的，
+`serverId` 就永远是空字符串。空字符串在真值判断里是假，于是所有挂在它后面的东西全部不干活：
+
+- `latex_env` 探测不跑 → 首屏那条「没装引擎」提示条不弹；
+- `latex_outline` 不跑 → 左侧「章节大纲」拿不到东西；
+- `latex_engine_install` 点了没反应（下一节解释它为什么变成「未知工具」）。
+
+这三条症状在 v0.9.8 的复盘里被记成「server 起不来」，其实**两件事各有一个成因** ——
+路径写死是「server 起不来」，deps 空是「server 起来了但面板没接上」。后者跟路径毫无关系，
+在**包完全正确**的机器上照样发生。
+
+### 三、那句「Unknown tool」的真实产地（跟 LaTeX 一个字都不沾）
+
+面板空着 `serverId` 时，旧 `callTool()` 是这么发的：
+
+```js
+const sid = serverId || "plugin-" + pluginId + "-latex";   // ← 猜一个
+const r = await api.mcp.callTool(sid, tool, args);
+```
+
+猜出来的 id 正好**碰巧是对的**，所以更迷惑 —— 真正的分岔在宿主那一侧：
+`mcp.callTool(sid, …)` 拿到一个**当时还没注册**的 server id，路由不到任何 MCP server，
+就落进了内置文件系统的分发默认分支。装机版 `app.asar` 里这句话只有一个产地：
+
+```js
+// BuiltInFileSystemService 的分发
+default: return { success: !1, error: `Unknown tool: ${te}` };
+```
+
+也就是说 —— **用户看到的那句话，是文件系统工具在说。** 它压根不知道 LaTeX 是什么。
+一个「server 还没连上」的时序问题，被翻译成了一句「这个工具不存在」，
+于是所有人都去查工具注册表，而问题在连接建立上。v0.9.8 换台机器那次排查被带走，
+就是这一句干的。
+
+### 四、改法
+
+```js
+/* 解析带重试：面板可能比 server 先挂载，给到 20 × 300ms ≈ 6s 的窗口 */
+async function resolveServerId(tries, gapMs) { ... }
+
+/* 空值时先去解析，仍然解析不到就**明确报错**，绝不拿猜的 id 发出去 */
+if (!sid) {
+  throw new Error(
+    "LaTeX 服务未启动：插件 MCP server 未连接（确认插件已启用、本机有 Node.js ≥18；" +
+      "若是刚装/刚更新，请完全退出 Notrat 再启动 —— 重载窗口不会重建 MCP 连接）"
+  );
+}
+```
+
+两条原则，换到别的地方也成立：
+
+1. **不确定的 id 不要猜。** 猜对了省一次判断，猜错了产生一条**指向错误方向的证据** ——
+   后者远比多一次重试贵。宁可报「我不知道」，也不要报「这个工具不存在」。
+2. **报错要报在能改动的那一层。** 「服务未启动」是用户能处理的（重启 / 查 Node），
+   「Unknown tool」不是 —— 它把人推向一个根本没有问题的注册表。
+
+### 五、加了一道断言，让两侧不可能再各自自洽
+
+0.9.8 的 A–E 五组断言**全部只看静态文件**（args 形态、sidecar 齐不齐、require 链闭合、
+落点随 home 推导）。它们拦得住「路径写死」，拦不住**工具表漂移**：面板调 `latex_engine_install`，
+而部署出去的 server 没注册这个名字。这种包两侧各自自洽，静态看全绿，一点那个按钮就炸。
+
+F 组把两侧**对起来**：起一次真实的部署产物 → 问 `tools/list` → 拿面板里所有
+`callTool("latex_xxx")` 的字面量去比，少一个就红；顺带断言面板里不许再出现
+`serverId || "plugin-…"` 这种猜测式兜底。
+
+### 六、新增 `.setup/doctor.js`：换机器的第一步
+
+宿主对「server 起不来」是静默的，对「连上了没有」也没处问。体检脚本把那些**看不到的中间环节**
+一条条摆出来，只读不写：
+
+```
+node .setup/doctor.js
+```
+
+七段：Node 版本 / 插件落点（含**双形态冲突**：单文件包与目录包同时存在会互相顶替）/
+manifest 的 server 路径是否可移植、解析后真实存在 / 起一次真实产物问 `tools/list` 并核对面板调用点 /
+宿主的活体进程表里有没有这条 server、pid 还活着吗 / 手工 MCP 登记里的重复项 / TeX 引擎（可选）。
+
+本机实测（一台装得**不干净**的机器，正好把所有提醒都触发了）：
+
+| 检查 | 结果 |
+| --- | --- |
+| Node.js | ✓ 22.21.1 |
+| `args[0]` | ✓ `${pluginDir}/server/index.js`，解析后文件真实存在 |
+| 起 server → `tools/list` | ✓ 12 个工具，面板要用的 11 个全在 |
+| 宿主活体表 | ✓ `plugin-notrat-latex-plugin-latex`（pid 31828）活着 |
+| 双注册 | **!** 另有一条手工登记 `notrat-latex`（pid 40568）指向 `~/.notrat/tools/latex-server.js` |
+| TeX 引擎 | ✓ xelatex / pdflatex / lualatex |
+
+### 七、教训
+
+1. **修完上一版不等于修完了这一类。** 0.9.8 治的是「路径写死」，发病机制是「server 起不来」；
+   0.9.9 治的是「面板够不到」，发病机制是「连接没建立」。**两个不同的机制，同一句症状。**
+   只按症状去修，第二次会以为「上次没修干净」。
+2. **错误文案是有方向的。** 「Unknown tool: X」指向注册表，「服务未启动」指向连接 ——
+   前者是死路。写兜底代码时多想一步：**这句话会把下一个人送到哪里去？**
+3. **`deps: []` 的 useEffect 是一次性赌注。** 它赌「挂载时依赖已经就绪」。跟外部进程打交道时，
+   这个赌注基本必输 —— 对方是异步的，而挂载时机是用户点的。
+
+> **本版没动的**：宿主那边的兜底分支照旧（路由不到 MCP server 就掉进文件系统 dispatch）。
+> 那是宿主的行为，插件改不了。能做的是**不去触发它** —— 这正是本版做的事。

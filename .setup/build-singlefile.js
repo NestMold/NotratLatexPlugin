@@ -317,5 +317,52 @@ else {
                : AWARN("宿主公式尾部形态未确认，建议人工核对一次");
 }
 
+/* F. 契约对账：面板真正会调的每一个 latex_* 工具，部署的 server 都得注册
+ *    这一条治的是「工具表漂移」：面板调 latex_engine_install，而部署出去的 server
+ *    没注册这个名字。静态看两侧各自自洽，一点那个按钮就是句莫名其妙的 Unknown tool。
+ *    做法：起一次真实的部署产物，问它 tools/list，再拿面板里的调用点去比。 */
+(function contractCheck() {
+  const panelCalls = [...new Set(
+    (fs.readFileSync(path.join(ws, "panels/editor.tsx"), "utf8").match(/callTool\("(latex_[a-z_]+)"/g) || [])
+      .map((s) => s.replace(/callTool\("/, "").replace(/"$/, ""))
+  )].sort();
+
+  let listed = [];
+  try {
+    const probe =
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "gate", version: "1" } } }) +
+      "\n" +
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) +
+      "\n";
+    const out = execFileSync(process.execPath, [path.join(sidecarDir, "index.js")], {
+      input: probe, encoding: "utf8", timeout: 25000, stdio: ["pipe", "pipe", "pipe"],
+    });
+    listed = [...new Set((out.match(/"name":"(latex_[a-z_]+)"/g) || []).map((s) => s.replace(/.*"(latex_[a-z_]+)"/, "$1")))].sort();
+  } catch (e) {
+    ABAD("起不动部署产物（" + path.join(sidecarDir, "index.js") + "）：" + ((e && e.message) || e) +
+         "\n      —— server 起不来时宿主是**静默**的，用户只会看到一堆没头没脑的 Unknown tool");
+    return;
+  }
+
+  if (!listed.length) { ABAD("server 起来了但 tools/list 一个工具都没报"); return; }
+  AOK("部署产物可启动，tools/list 报 " + listed.length + " 个工具：" + listed.join(", "));
+
+  const missing = panelCalls.filter((t) => listed.indexOf(t) < 0);
+  if (missing.length) {
+    ABAD("面板会调、但部署的 server 没注册：" + missing.join(", ") +
+         "\n      —— 用户点那个按钮只会拿到「Unknown tool」，排查方向被彻底带偏");
+  } else {
+    AOK("面板 " + panelCalls.length + " 个调用点全部在 tools/list 里：" + panelCalls.join(", "));
+  }
+
+  /* 面板不再拿猜的 serverId 硬发（v0.9.9）：旧写法会把「服务没起来」伪装成「工具不存在」 */
+  const panelSrc = fs.readFileSync(path.join(ws, "panels/editor.tsx"), "utf8");
+  if (/serverId\s*\|\|\s*"plugin-"/.test(panelSrc)) {
+    ABAD("面板仍在拿猜的 serverId 兜底硬发 —— 猜错时宿主会掉进内置文件系统兜底分支，报出与 LaTeX 无关的 Unknown tool");
+  } else {
+    AOK("面板不再猜 serverId：解析不到就明确报「服务未启动」");
+  }
+})();
+
 if (FAIL) { console.error("\n构建失败：" + FAIL + " 条断言未通过 —— 修好再发，别让它带着静默故障出厂。"); process.exit(1); }
 console.log("\n断言全通过（" + (ev.ok ? "含宿主取证" : "宿主取证已跳过") + "）。");
