@@ -7,7 +7,7 @@
 > 让 Notrat 直接打开、编辑、编译 `.tex` 的科研写作插件。
 > A research-writing LaTeX plugin for the Notrat app: WYSIWYG-style `.tex` editing with outline navigation, compile, and export.
 
-[![version](https://img.shields.io/badge/version-0.9.3-blue.svg)](https://github.com/NestMold/NotratLatexPlugin/releases/latest)
+[![version](https://img.shields.io/badge/version-0.9.8-blue.svg)](https://github.com/NestMold/NotratLatexPlugin/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![notrat](https://img.shields.io/badge/Notrat-%E2%89%A5%201.3.3-6f42c1.svg)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
@@ -190,12 +190,12 @@ server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 
 ```bash
 npm install        # 只依赖 katex（预览公式资源）
-npm run gate       # ★ 验收门 29 层，全绿约 80s，任何一层红了退出非零
+npm run gate       # ★ 验收门 30 层，全绿约 80s，任何一层红了退出非零
 npm run test:core  # 内核单测
 npm run build      # 打单文件包（热更新）
 ```
 
-源码结构、验收门 27 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
+源码结构、验收门 30 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
 
 技术栈：面板是 React（TSX，宿主内联加载），server 是纯 Node 零依赖（MCP stdio），构建用 esbuild，测试全部离线可跑（jsdom 做真 DOM 往返）。
 
@@ -242,11 +242,11 @@ npm run build      # 打单文件包（热更新）
 欢迎 Issue 和 PR：
 
 - **真实 `.tex` 语料**是最缺的——合成语料覆盖想得到的边界，真实论文才覆盖想不到的（详见 [docs/v0.9-status.md](docs/v0.9-status.md)「语料」一节）。欢迎投递可公开的论文源码（脱敏后）；
-- 改代码前先跑 `npm run gate`，PR 请保证 29 层全绿；
+- 改代码前先跑 `npm run gate`，PR 请保证 30 层全绿；
 - 提 Issue 请附最小复现 `.tex` 与 Notrat 版本号。
 
 ## 许可证
 
 [MIT](LICENSE) © Notrat Community
 
-完整版本历史见 **[CHANGELOG.md](CHANGELOG.md)**（33 个版本节 + 版本速览）。
+完整版本历史见 **[CHANGELOG.md](CHANGELOG.md)**（44 个版本节 + 版本速览）。

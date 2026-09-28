@@ -324,9 +324,23 @@ const call = (name, args, id) => ({ jsonrpc: "2.0", id: id, method: "tools/call"
     const toolsDir = path.join(os.homedir(), ".notrat", "tools");
     ok("装机包把 engine-install.js 也拷了（漏了 MCP server 起不来 —— v0.9.4 的坑）",
        fs.existsSync(path.join(toolsDir, "engine-install.js")), path.join(toolsDir, "engine-install.js"));
-    const deployedManifestEnv = ((pkg.mcpServers || [])[0] || {}).env || {};
+    const deployedServer = (pkg.mcpServers || [])[0] || {};
+    const deployedManifestEnv = deployedServer.env || {};
     ok("装机 manifest 注入了 LATEX_MIRROR（设置项真能传到 server）", "LATEX_MIRROR" in deployedManifestEnv);
     ok("装机 manifest 注入了 LATEX_NET_PROXY", "LATEX_NET_PROXY" in deployedManifestEnv);
+    /* v0.9.8：args 里写死构建机绝对路径 = 换机器/换用户名即 Cannot find module，
+     * 而宿主对 mcp.start 失败只有 console.warn + 一条 packError（面板那次探测又被
+     * try/catch 吞掉）——症状是「全部 latex_* 工具变未知工具、首屏提示条也不弹」，全程无报错。
+     * 所以这条必须进门的：args 只许是宿主运行时解析的 ${pluginDir} 占位符。 */
+    const dArgs = (deployedServer && deployedServer.args) || [];
+    ok("装机 manifest 的 args 是可移植占位符（不含构建机绝对路径）",
+       Array.isArray(dArgs) && dArgs.length === 1 && /\$\{pluginDir\}\//.test(String(dArgs[0])) &&
+       !/(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]/.test(String(dArgs[0])) && String(dArgs[0]).indexOf(os.homedir()) < 0,
+       JSON.stringify(dArgs));
+    /* 落点也必须真的在：占位符解析成 <插件目录>/<插件 id>/server/index.js，文件不在照样起不来 */
+    ok("可移植落点真的有文件（<插件目录>/<插件 id>/server/index.js）",
+       fs.existsSync(path.join(os.homedir(), ".notrat", "plugins", pkg.id, "server", "index.js")),
+       path.join(os.homedir(), ".notrat", "plugins", String(pkg.id), "server", "index.js"));
   } else {
     console.log("  --    没找到装机包，跳过「装机形态」三条（跑一次 npm run build 会更全）");
   }
@@ -336,7 +350,14 @@ const call = (name, args, id) => ({ jsonrpc: "2.0", id: id, method: "tools/call"
    * 这里不「扫全目录」（那样会把 docmodel/txlog 这些只被测试用的文件也算进来，天天误报），
    * 而是**从真正被执行的入口 index.js 走 require 图**，一步步算闭包 —— 精确且更严。 */
   const bsrc = fs.readFileSync(path.join(WS, ".setup", "build-singlefile.js"), "utf8");
-  const copyList = (bsrc.match(/for \(const f of \[([^\]]+)\]\)/) || [])[1] || "";
+  /* 拷贝清单的形态变过两回：原先是内联在 for (const f of [...]) 里，
+   * v0.9.8 提成了具名常量 REQUIRED_SERVER_FILES（因为服务器文件要往两个落点写）。
+   * 两种都认；都认不出就把 copyList 留空并**判红**——老实现提取失败时静默变空清单，
+   * 表现成「闭包里的文件全被报成漏拷」，看着像构建坏了，其实是这条反回归自己瞎了。 */
+  const mList = bsrc.match(/REQUIRED_SERVER_FILES\s*=\s*\[([^\]]+)\]/) || bsrc.match(/for \(const f of \[([^\]]+)\]\)/);
+  const copyList = mList ? mList[1] : "";
+  ok("能从构建脚本里提取拷贝清单（提取不到 = 本层这条反回归失效）", copyList.length > 0,
+     "提取结果: " + JSON.stringify(copyList.slice(0, 90)));
   const copied = new Set([...copyList.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
   const sdir = path.join(WS, "server");
   const seen = new Set();

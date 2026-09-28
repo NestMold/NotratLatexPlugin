@@ -5,7 +5,7 @@
 > - 顺序是**写作顺序**，不是语义化版本顺序：有些补丁版是在后续版本之后才补记的（例如 §v0.4.1 排在 §v0.4.0 之前）。
 > - 「版本速览」= 原 README 开头那面版本摘要墙，原样保留。
 > - 各节里形如「详见 §v0.7.2」的交叉引用都指向本文件内的章节。
-> - 当前 `manifest.json` 版本为 **0.9.7**，本日志记录到 **v0.9.7**。
+> - 当前 `manifest.json` 版本为 **0.9.8**，本日志记录到 **v0.9.8**。
 > - ⚠ **v0.8.28 … v0.9.5 这八条是补记的**（当时只写了代码与验收层，日志一直欠着）。
 >   取证来源是代码注释、`.setup/gate-v070.js` 的层清单与 `docs/`，每条开头都标了取证位置。
 >   补记能保证的是**结论可复核**（照位置读、照命令跑），不能保证的是当时的措辞与情绪 ——
@@ -59,6 +59,7 @@
 - [v0.9.5 — 快照 / 恢复按字节走（「版本时光机」不再改坏 UTF-16 的 `.tex`）](#v095--快照--恢复按字节走（「版本时光机」不再改坏-utf-16-的-tex）)
 - [v0.9.6 — 引擎一键安装（把 `.setup/` 里那份只有开发者看得见的脚本，接进用户能点的按钮）](#v096--引擎一键安装（把-setup-里那份只有开发者看得见的脚本，接进用户能点的按钮）)
 - [v0.9.7 — 安装指引不再硬编码 winget（LTSC / Server / 删过 Store 的机器上，那条命令根本不存在）](#v097--安装指引不再硬编码-winget（ltcs--server--删过-store-的机器上，那条命令根本不存在）)
+- [v0.9.8 — 单文件包把 MCP server 的路径写成了构建机的绝对路径（换台机器就全灭，且全程不报错）](#v098--单文件包把-mcp-server-的路径写成了构建机的绝对路径（换台机器就全灭，且全程不报错）)
 
 ---
 
@@ -3198,3 +3199,175 @@ installHint()  = choco install miktex    （或 https://miktex.org/download）
 4. **同一个判断出现在两个文件里，迟早会分叉。** `engine-install.js` 那份抄来的 `manualHint`
    本身没错，但它意味着「下次改一处、漏一处」，然后插件自己前后矛盾（一处说 winget、一处说 choco）。
    收敛成单一实现 + 懒加载委托，比两边同时改对更靠得住。
+
+---
+
+## v0.9.8 — 单文件包把 MCP server 的路径写成了构建机的绝对路径（换台机器就全灭，且全程不报错）
+
+**取证位置**：`.setup/build-singlefile.js`（落点改用宿主占位符 + 文件末尾新增 A–E 组构建期断言，
+本版改动主体）、`.setup/check/v096-engine-install.js`（门禁第 30 层的「装机形态」两条 + 拷贝清单提取反回归）、
+`manifest.json`（版本 0.9.8）。
+
+### 一、起因：产物里写着构建机的家目录
+
+单文件包（`~/.notrat/plugins/<id>.json`）没有自己的目录，`server/` 得另找地方落。
+此前的做法是把 `server/` 拷到 `~/.notrat/tools/`，然后把**那个位置**写进分发的 manifest：
+
+```js
+const toolsDir = path.join(os.homedir(), ".notrat", "tools");
+srv.args = [toolsDir.replace(/\\/g, "/") + "/latex-server.js"];
+```
+
+`os.homedir()` 在构建机上展开成 `C:/Users/Administrator/.notrat/tools/latex-server.js` ——
+这串字符**原样进了产物**。也就是说，「server 在哪」这件事被钉死在了**构建它的那台机器**上。
+
+先把影响面说清楚，免得高估：
+
+| 分发形态 | 有没有中招 |
+| --- | --- |
+| Release 里的 `notrat-latex-plugin-0.9.7.zip`（目录包，面板安装 / 市场走这条） | **没有**。仓库里的 `manifest.json` 从第一版起就是 `${pluginDir}/server/index.js` |
+| `npm run build` 产出的单文件包（本机自测形态） | **中招**。产物只要离开构建机，就是一条死路径 |
+
+所以这不是「用户已经大面积炸了」，而是**产物绑定了构建机** —— 在这台机器上跑一百遍都正常，
+一旦这个包换了机器或用户名就全灭，而「换台机器验一遍」恰好是别人验证一个插件的第一步。
+
+### 二、失效的样子：全灭，但一个字都不说
+
+宿主把 args 原样交给 `node`，找不到文件就退出；`mcp.start` 抛错，宿主这么处理
+（装机版 1.3.3 的 renderer；原文都是压缩过的单行，下面按可读性断行 —— 只断行，没改字符）：
+
+```js
+async function startPackServer(it,te){ try{ await window.electronAPI.mcp.start({ ... }) }
+  catch(ht){ console.warn(`[PluginPack] MCP server 启动失败 ${te.id}:`,ht),
+             recordPackError(it.manifest.id,"mcp-start",te.id,ht) } }
+```
+
+一条 `console.warn`，加一条沉在 store 里的 packError。而插件自己那次探测也是吞掉的
+（`panels/editor.tsx`：`} catch (e) {}   // 老版 server 没这个工具 / 通道不可用：当作没事，绝不因此报错`）。
+
+于是症状是一整片，成因是零条：
+
+- 十二个 `latex_*` 工具**一起**变成「未知工具」—— 它们全来自这一个 server；
+- 左侧「章节大纲」空白，文件树右键的编译 / 校验点了没反应；
+- 首屏那条「没装引擎」提示条也不弹（它同样得先问 server 才知道）。
+
+而打开「设置 → 插件」，卡片上写着**已启用**。这就是最难查的一类故障：状态说没事，功能全不在。
+
+### 三、改法：问宿主「我的目录在哪」，别再自己拼路径
+
+宿主本来就带一个运行时占位符 `${pluginDir}`。装机版 1.3.3 的 renderer 里（同样只断行）：
+
+```js
+function pluginDirFor(it){ const te = usePluginPackStore.getState().packs[it]?.scope || "global",
+    dt = pluginsDirCache[te] || pluginsDirCache.global || "";
+  return dt ? `${dt.replace(/[\\/]+$/,"")}/${it}` : it }
+function resolvePlaceholders(it,te){ ... .replace(/\$\{pluginDir\}/g, () => pluginDirFor(it)) }
+```
+
+而它确实作用在 `args` 上：
+
+```js
+args: te.args?.map(ht => resolvePlaceholders(it.manifest.id, ht))
+```
+
+`pluginsDirCache` 是**运行时**从 `window.electronAPI.pluginDir.getDir("global")` 取的
+（本机 = `~/.notrat/plugins`），所以 `pluginDirFor(id)` = `<插件目录>/<插件 id>`，
+与用户名、盘符都无关。于是这一版的 args 只剩一行：
+
+```js
+const PORTABLE_SERVER_ARG = "${pluginDir}/server/index.js";
+srv.args = [PORTABLE_SERVER_ARG];
+```
+
+**代价是落点必须与宿主那条公式同形**：单文件包的 server 得预置到 `<插件目录>/<插件 id>/server/`
+（本机 = `~/.notrat/plugins/notrat-latex-plugin/server/`），否则占位符解析出来的位置上没有文件，
+照样起不来 —— 占位符只解决「路径怎么写」，不解决「东西在哪」。构建脚本把落点提成了纯函数
+`sidecarDirFor(home, id)`，好在断言里拿假 home 复算。老的 `~/.notrat/tools/` 照旧镜像一份：
+老 manifest 和 `.setup/` 里的开发者脚本还引用那个位置。
+
+### 四、把「静默」交给构建期拦：A–E 五组断言
+
+改完落点，最难接受的是「这类故障差一点又这么出厂了」，所以顺手把它变成**构建失败**：
+
+| 组 | 断言 | 不通过时 |
+| --- | --- | --- |
+| A | `args` 只许是 `${pluginDir}/...`：不含盘符、不含用户名、不含构建机 home、不指向 `~/.notrat/tools` | 失败 |
+| B | 整份产物的 `mcpServers` 段不许出现盘符路径 | 失败 |
+| C | sidecar 七个模块齐 + `assets-katex.json` 在 + `index.js` 的 `require` 链闭合 + sidecar 里的 `VERSION` 与 manifest 对齐 | 失败 |
+| D | 落点与宿主公式同形，且**跟着 home 推导**（三个假 home 复算，证明它不是字面量） | 失败 |
+| E | 宿主取证：从**装机版 app.asar** 里抠出 renderer，核对 `${pluginDir}` → `pluginDirFor()` 的替换确实在、确实从 `pluginsDirCache` 取、尾部确实接 `<插件 id>` | 读不到 asar（CI / 没装 Notrat）就降级为提示，不拦构建 |
+
+A–D 里 C 组是有来历的：`index.js` 顶层 `require` 少一个模块，症状与这一版**一模一样**
+（server 起不来、工具全没、宿主不报错）—— v0.9.4 和 v0.9.6 各踩过一次，两次都是「加了文件忘进拷贝清单」。
+这一版把清单提成了具名常量 `REQUIRED_SERVER_FILES`，并且**从 `index.js` 走 require 图算闭包**来核，
+而不是「扫一遍 server/ 目录」（那样会把只被测试引用的文件也算进来，天天误报）。
+
+B 组只提示不拦，是踩出来的：JSON 转义会把内联源码里的 `t:"text"` 变成 `t:\"text\"`，
+在那个位置 `t:\` 长得和盘符路径一模一样 —— 本机实测 5 处告警，全是这个原因。
+所以「整份产物里找盘符」这条只当线索，不当判据。
+
+### 五、验证
+
+**① 活证据：`${pluginDir}` 真的被解析了，server 真的从这个路径起来了。** 本机进程表：
+
+```
+PID 35104   node  C:\Users\Administrator\.notrat\plugins/notrat-latex-plugin/server/index.js
+PID 27720   node  C:\Users\Administrator\.notrat\plugins/notrat-broadcast/server.cjs
+```
+
+第二行是另一个插件 —— 同款写法、同一条路径形状，说明这不是 LaTeX 插件独有的问题。
+旧形态在这一栏里会是 `C:/Users/Administrator/.notrat/tools/latex-server.js`。
+
+**② 构建期断言全过**（`npm run build`）：A–E 逐条 `✓`，E 组真的从
+`D:/Notrat/resources/app.asar` 里抠出了 renderer（宿主版本 1.3.3，正是 `notrat.minVersion` 要求的那一版，
+所以这三条断言验的确实是「用户会装上来的那个宿主」）。
+
+**③ 装机产物按字节核**（看盘上的字节，不看构建日志）：
+
+- 单文件 manifest `~/.notrat/plugins/notrat-latex-plugin.json`：
+  `args = ["${pluginDir}/server/index.js"]`、`version = 0.9.8`、`enabled = true`、`editors.source` 276409 字符；
+- sidecar 七个模块 + `assets-katex.json` 与 `server/` 下同名文件**逐字节相同**，
+  唯一例外是 `index.js` 第 28 行 `const VERSION`（源码 `0.8.6` → 装机 `0.9.8`，构建时覆写，这是设计）；
+- 兼容镜像 `~/.notrat/tools/` 八个文件仍在，`latex-server.js` 的 `VERSION = "0.9.8"`；
+- 工作区没被构建弄脏（`git status` 只有本次改的那几个文件）。
+
+**④ 门禁 30/30 全绿（用时 86.5s，退出码 0）。** 第 30 层从 95 项加到 **98 项**，
+加的三条都在「装机形态」附近，而且**断言的是装机产物**而不是构建脚本里的字符串
+（产物才是用户拿到的东西）：
+
+```
+  ok    装机 manifest 的 args 是可移植占位符（不含构建机绝对路径）
+  ok    可移植落点真的有文件（<插件目录>/<插件 id>/server/index.js）
+  ok    能从构建脚本里提取拷贝清单（提取不到 = 本层这条反回归失效）
+```
+
+**⑤ 这一版是被版本号逼出来的。** 盘上那个单文件包此前已经用新脚本重装过（`args` 已是占位符），
+可 `manifest.json` 还停在 **0.9.7** —— 同一个版本号，两种落点。**修完不抬版本，等于没修**：
+之后任何一次「0.9.7 有问题吗」都答不上来，因为「0.9.7」同时指着两个不同的产物。
+所以本版没有新功能，只有：
+
+- `manifest.json` → 0.9.8，构建脚本的落点与断言、门禁第 30 层、README 的版本徽章一起对齐；
+- 顺手修掉文档里几个已经飘了的总数：README「29 层全绿」→ 30 层、「33 个版本节」→ 44 个、
+  `docs/DEVELOPMENT.md` 的验收门表 27 层 → 30 层（补上缺口的三行）。
+
+### 六、教训
+
+1. **「在我这跑得好好的」在这一版里是最强的假证据。** 构建机的 `os.homedir()`
+   恰好就是宿主找得到的那台机器 —— 缺陷的现场被开发环境本身盖住了。
+   这类 bug 不会被「多跑几遍」发现，只会被**换机器**发现。
+   凡是要写进产物的路径，先问一句：这是**宿主的**目录，还是**我这台机器**的目录？
+2. **同一个版本号不能对应两种产物。** 改代码不抬版本，盘上是新的、发出去的是旧的，两者却都叫 0.9.7。
+   抬版本不是为了好看，是为了**能指着号说话**。
+3. **反回归脚本自己失明，比没有反回归更坏。** 门禁里那条「从构建脚本提取拷贝清单」原来用正则抠
+   `for (const f of [...])`；这一版把清单提成了具名常量（因为要往两个落点写），正则当场抠不到 →
+   `copyList` 静默变空 → require 闭包里的文件**全被报成漏拷**。看着像构建坏了，其实是门禁瞎了。
+   现在两种形态都认，都认不出就**判红**。这是 v0.9.7 那条「错误的断言会替 bug 站岗」的续集，
+   但换了张脸：那次是断言写错，这次是**取证失败时默认了「没问题」**。
+4. **占位符只解决「路径怎么写」，不解决「东西在哪」。** 把 args 改成 `${pluginDir}/server/index.js`
+   之后，只要没有人负责把 `server/` 放进 `<插件目录>/<插件 id>/`，故障就从「路径写死」
+   变成「路径对了但文件不在」—— 症状一模一样，依然不报错。
+   所以 A 组旁边必须有 C、D 两组：一组管路径形态，一组管落点同形，缺一组就等于没修。
+
+> **本版没动的**：插件面板那次探测照旧 `catch (e) {}` 吞异常。它当初的意图是
+> 「老宿主没有这个工具时别报错」，要区分「工具不存在」和「整个通道都不在」，得另开一版。
+> 这里先把症状写全 —— 宿主行为改不了，至少要让人搜得到。

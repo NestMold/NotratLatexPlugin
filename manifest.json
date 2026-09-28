@@ -1,7 +1,7 @@
 {
   "id": "notrat-latex-plugin",
   "name": "LaTeX 助手",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "科研写作向的 LaTeX 插件：.tex 由插件编辑器接管（可视化 / 源码 / 分屏三档视图，切换在文件标签栏右侧的模式开关上；语法高亮、KaTeX 公式预览、编译与引用校验），左侧「章节大纲」是可点击的章节树（点条目直接跳到源码对应行），工具栏「导出」可产出 PDF 或自包含 HTML（图片内嵌、含打印样式）并在 Notrat 里直接预览，文件树右键可直接编译或校验。",
   "type": "plugin",
   "manifestVersion": 2,
