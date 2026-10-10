@@ -81,3 +81,6 @@ assets/clipboard-*.png
 # ---------- 12. 本地发布产物（正式资产在 GitHub Releases 上）----------
 /release-staging/
 /notrat-latex-plugin-*.zip
+
+# 市场发布产物（zip + admin-payload + upload.mjs；正式资产在市场与 GitHub Releases 上）
+/release/
