@@ -10,7 +10,7 @@
  * 上传前不联网（只读本地 zip + README + manifest），上传由同目录的 upload.mjs 负责。
  *
  * 用法：node .setup/make-market-payload.mjs
- * 产物：release/notrat-latex-plugin-0.9.9/{admin-payload.json, checksums.txt}
+ * 产物：release/<id>-<manifest.json 里的版本>/{admin-payload.json, checksums.txt}
  */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -59,6 +59,28 @@ rmSync(unzPy, { force: true });
 rmSync(join(here, "manifest.json"), { force: true });
 if (zipMf.version !== VERSION) { console.error(`✖ zip 内版本 ${zipMf.version} ≠ 仓库版本 ${VERSION}`); process.exit(1); }
 
+/* ── 1.5 mcpTools 从包里真读（手抄会漂：v0.9.12 的 latex_render_graphic 就这么漏过）──
+   面板真的会调这些工具（panels/editor.tsx 的 callTool 调用点），
+   少报一个 = 市场详情页对不上包，用户照详情页排查会以为工具不存在。 */
+const srvDir = join(here, "_srvtmp");
+rmSync(srvDir, { recursive: true, force: true });
+mkdirSync(srvDir, { recursive: true });
+const srvPy = join(here, "_unzip-srv.py");
+writeFileSync(srvPy, `
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extract("server/index.js", sys.argv[2])
+`, "utf8");
+execFileSync("python", [srvPy, ZIP_PATH, srvDir], { encoding: "utf8" });
+const srvSrc = readFileSync(join(srvDir, "server", "index.js"), "utf8");
+rmSync(srvPy, { force: true });
+rmSync(srvDir, { recursive: true, force: true });
+const MCP_TOOLS = [...srvSrc.matchAll(/name:\s*"(latex_[a-z_]+)"/g)].map((m) => m[1]);
+if (MCP_TOOLS.length < 12) {
+  console.error(`✖ 从包内 server/index.js 只提出 ${MCP_TOOLS.length} 个工具 —— 提取正则可能已失效，别让清单静默变短`);
+  process.exit(1);
+}
+console.log(`  包内工具 ${MCP_TOOLS.length} 个：${MCP_TOOLS.join(", ")}`);
+
 /* ── 2. README → 市场详情页正文（图片改绝对地址，让市场能渲染）── */
 const RAW = "https://raw.githubusercontent.com/NestMold/NotratLatexPlugin/main/";
 let readme = readFileSync(join(ROOT, "README.md"), "utf8")
@@ -78,7 +100,10 @@ const payload = {
   tags: ["LaTeX", "论文", "写作", "编辑", "公式", "PDF", "科研"],
   author: { name: "巢墨科技", url: "https://notrat.cn", official: true },
   readme,
-  notes: `首个市场上架版本（与 GitHub Release v${VERSION} 同源同包）。面板接入、路径可移植、服务连接三处修复已含在内；另附换机器体检脚本 .setup/doctor.js。`,
+  notes: `与 GitHub Release v${VERSION} 同源同包（同一个 zip、同一个 sha256）。` +
+    `本版含 v0.9.10→v0.9.13 四版累积修复：标题里的字体声明不再漏进正文、` +
+    `TikZ 绘图环境不再被当正文排、绘图可以就地查看、浮层里的配图有人补；` +
+    `另附换机器体检脚本 .setup/doctor.js。`,
   manifest_summary: {
     id: "notrat-latex-plugin",
     name: "LaTeX 助手",
@@ -87,9 +112,7 @@ const payload = {
       editors: [{ id: "latex-editor", title: "LaTeX 编辑器", extensions: [".tex"] }],
       ui: [{ id: "latex-outline", title: "章节大纲", location: "outline" }]
     },
-    mcpTools: ["latex_parse", "latex_validate", "latex_compile", "latex_export", "latex_outline",
-      "latex_status", "latex_env", "latex_asset", "latex_backup", "latex_history",
-      "latex_engine_install", "latex_engine_install_status"]
+    mcpTools: MCP_TOOLS,
   },
   package_url: "",            // ← upload.mjs 上传后回填
   package_hash: hash,

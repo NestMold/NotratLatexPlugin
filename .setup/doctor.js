@@ -105,6 +105,98 @@ else {
   }
 }
 
+/* ---------- 3.5 面板源码能不能编译（v0.9.14）----------
+ * 为什么查这个：宿主对面板源码是「读到什么编译什么」，而编译期**不查自由变量**
+ *   （宿主只用 TypeScript 抹语法）。所以一份带占位符的面板（文件头那三行
+ *   __LPC__ / __WYS__ / __TX__ 没被内联成内核）装上后一切正常，
+ *   直到打开 .tex —— 挂载 effect 里第一次碰历史，直接
+ *   `ReferenceError: TX is not defined`，整个编辑器白屏；
+ *   同类问题还有 LPC.renderInlineHtml 缺席时「行内 HTML 渲染静默失效」。
+ * 这里只看三件事，纯正则、零依赖：占位符有没有清干净、三块内核有没有定义、
+ * 以及目录包形态下面板文件本身是不是产物。 */
+console.log("\n[3.5] 面板源码能不能编译（占位符 / 内核定义）");
+if (manifest) {
+  const TOK = { LPC: "/*" + "__LPC__" + "*/", WYS: "/*" + "__WYS__" + "*/", TX: "/*" + "__TX__" + "*/" };
+  const DEF = {
+    LPC: /^const LPC = \{ renderPreview/m,
+    WYS: /^const WYS = \(function \(\) \{/m,
+    TX: /^const TX = \(function \(\) \{/m,
+  };
+  const editors = (manifest.contributions || {}).editors || [];
+  const panelText = (e) => {
+    /* 单文件包：源码在 manifest 里（source）；目录包：可能在目录里的真实文件（sourceFile） */
+    if (typeof e.source === "string" && e.source) return { text: e.source, from: "manifest.editors[].source" };
+    if (typeof e.sourceFile === "string" && e.sourceFile && hasDir) {
+      const f = path.join(packDir, String(e.sourceFile).replace(/^[./\\]+/, ""));
+      if (fs.existsSync(f)) return { text: fs.readFileSync(f, "utf8"), from: e.sourceFile };
+    }
+    return null;
+  };
+  if (!editors.length) warn("manifest 里没有 editors[]（这份包没有编辑器贡献面）");
+  editors.forEach((e) => {
+    const got = panelText(e);
+    if (!got) {
+      bad("编辑器「" + (e.label || e.id) + "」拿不到面板源码（manifest 既没有 source，目录里也没有 sourceFile 指向的文件）\n" +
+          "      —— 宿主的原话是「缺少 source（目录型包需确认 sourceFile 存在），忽略」：编辑器会被跳过。");
+      return;
+    }
+    const left = Object.keys(TOK).filter((k) => got.text.indexOf(TOK[k]) >= 0);
+    const miss = Object.keys(DEF).filter((k) => !DEF[k].test(got.text));
+    if (left.length) {
+      bad("编辑器「" + (e.label || e.id) + "」的面板源码里还有占位符 " + left.join(" / ") + "（取自 " + got.from + "）\n" +
+          "      —— 这不是成品，是构建输入：宿主读到什么编译什么，打开 .tex 就会\n" +
+          "      ReferenceError: <内核> is not defined（整个编辑器白屏）。重装一个修好的包。");
+    } else if (miss.length) {
+      bad("编辑器「" + (e.label || e.id) + "」的面板源码缺内核定义 " + miss.join(" / ") + "（取自 " + got.from + "）\n" +
+          "      —— 编译期不报错，运行到那一句才炸（历史 / 就地编辑 / 预览会整块失灵）。");
+    } else {
+      ok("编辑器「" + (e.label || e.id) + "」的面板源码是产物：占位符 0 个，LPC / WYS / TX 都有定义（取自 " + got.from + "）");
+    }
+  });
+  if (hasDir && fs.existsSync(path.join(packDir, "manifest.json"))) {
+    /* 目录包：manifest 引用到的面板文件本身也得是产物（宿主可能按 sourceFile 去读它） */
+    const refs = [];
+    editors.forEach((e) => { if (typeof e.sourceFile === "string" && e.sourceFile) refs.push(e.sourceFile); });
+    ((manifest.contributions || {}).ui || []).forEach((u) => {
+      const c = u.content || {};
+      if (c.type === "component" && typeof c.sourceFile === "string" && c.sourceFile) refs.push(c.sourceFile);
+    });
+    const dirty = [];
+    refs.forEach((rel) => {
+      const f = path.join(packDir, String(rel).replace(/^[./\\]+/, ""));
+      if (!fs.existsSync(f)) return;
+      const t = fs.readFileSync(f, "utf8");
+      const left = Object.keys(TOK).filter((k) => t.indexOf(TOK[k]) >= 0);
+      if (left.length) dirty.push(rel + " → " + left.join("/"));
+    });
+    if (dirty.length) {
+      bad("目录包里这些面板文件还是「带占位符的构建输入」：" + dirty.join(" | ") + "\n" +
+          "      —— manifest 引用了它们，宿主缺 source 时会按 sourceFile 去读：读到什么编译什么，打开 .tex 就崩。");
+    } else ok("目录包引用的面板文件（" + refs.length + " 个）都是产物");
+
+    /* 目录包自己带的 panels/*.tsx 也扫一遍：manifest 内联了 source、也删了 sourceFile 的包，
+     * 今天宿主用不到这些文件（缺 source 才回读目录）—— 但它们仍是「跑不起来的半成品」，
+     * 谁按目录包契约去读（宿主换实现 / 有人照 README 把源码目录整份放进来）就是同一个坑。 */
+    const stray = [];
+    (function walkPanels(dir) {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const f = path.join(dir, ent.name);
+        if (ent.isDirectory()) { walkPanels(f); continue; }
+        if (!/\.(tsx|ts)$/.test(ent.name)) continue;
+        const t = fs.readFileSync(f, "utf8");
+        const left = Object.keys(TOK).filter((k) => t.indexOf(TOK[k]) >= 0);
+        if (left.length) stray.push(path.relative(packDir, f).split(path.sep).join("/") + " → " + left.join("/"));
+      }
+    })(fs.existsSync(path.join(packDir, "panels")) ? path.join(packDir, "panels") : packDir);
+    if (stray.length) {
+      warn("包内还有 " + stray.length + " 份面板文件是「带占位符的构建输入」：" + stray.join(" | ") +
+           "\n      —— 这份包的内联只写进了 manifest；按目录包契约（缺 source 时读文件）去读它就会崩。换一个重打包过的版本。");
+    }
+  }
+} else {
+  info("（没读到 manifest，本节跳过）");
+}
+
 /* ---------- 4. 起一次真实产物，问 tools/list ---------- */
 console.log("\n[4] 真实产物自检（起 server → tools/list）");
 const candidate = global.__SERVER__ || path.join(packDir, "server", "index.js") ||

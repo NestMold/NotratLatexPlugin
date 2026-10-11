@@ -72,6 +72,19 @@
  *                            节点**，浮层这一棵从来没人补。三条一起修：loadAssetsIn 收
  *                            done（聚合）、新增 loadPopAssets 走同一条通道、摆位 effect
  *                            每拍调它并在图到货 / 解码后重摆（v0.9.13 加）
+ *   [35] 面板源码是产物   : 「装 zip 必崩：ReferenceError: TX is not defined」——
+ *                            面板源（panels/*.tsx）不是成品：文件头三行是占位注释，
+ *                            打包时要把三块内核（preview-core / wysiwyg / txlog）
+ *                            内联进去；而这一步一直只服务于**单文件包**，发行 zip
+ *                            只把内联写进了 manifest，从没管过 zip 里的 panels/*.tsx ——
+ *                            宿主对目录包的契约恰恰是「缺 source 时按 sourceFile 去
+ *                            目录里读真实文件」：读到什么编译什么，编译期还不报
+ *                            （宿主只用 tsc 抹语法），运行到 new TX.History(...)
+ *                            才炸，异常又被各处的 try/catch 咽掉。0.9.6 → 0.9.13
+ *                            逐版核对，目录型这条路一直是坏的；同一根因还带着一处
+ *                            静默降级：zip 那份内联少了 renderInlineHtml。
+ *                            两条一起修：打包第 2.6 步把面板文件写成产物，规则收成
+ *                            .setup/lib/panel-inline.js 一份（v0.9.14 加）
  *
  * 为什么要第 [1] 层：0.7.0 线上出过
  *   ReferenceError: Cannot access 'renderMath' before initialization
@@ -118,6 +131,7 @@ const steps = [
   { name: "绘图环境 / 浮层摆位：TikZ 不当正文排 / 漏 \\end 不吃正文 / 浮层按实测尺寸自适应（v0911-tikz-popup.js）", file: ".setup/check/v0911-tikz-popup.js" },
   { name: "绘图环境就地渲染：卡片按钮 / standalone 判定 / 补 ctex（不补会静默缺字）/ 两级导言 / 真编一次 + 缓存 / 不碰工作区 / 三边白名单对账（v0912-graphic-render.js）", file: ".setup/check/v0912-graphic-render.js" },
   { name: "浮层里的图没人补：缓存命中零 MCP / 到货补 src 并回调重摆位 / 降级也回调（v0913-pop-assets.js）", file: ".setup/check/v0913-pop-assets.js" },
+  { name: "面板源码是产物：占位符清零 / 内核真定义了 / 两种包形态同源 / 包内实读一致（v0914-panel-inline.js）", file: ".setup/check/v0914-panel-inline.js" },
 ];
 
 let failed = 0;

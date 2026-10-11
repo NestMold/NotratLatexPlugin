@@ -53,7 +53,7 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 
 ## 验收门（`npm run gate`）
 
-共 34 层，实测 `✓ 验收门全绿（34/34，用时 119.4s）`。层按 `steps` 数组里的执行顺序编号：
+共 35 层，实测 `✓ 验收门全绿（35/35，用时 119.4s）`。层按 `steps` 数组里的执行顺序编号：
 
 | # | 层 | 加于 |
 | --- | --- | --- |
@@ -91,6 +91,7 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 | 32 | 绘图环境 / 浮层摆位：TikZ 不当正文排、漏 `\\end` 也不吃正文、浮层按实测尺寸翻上方 / 钳视口 | v0.9.11 |
 | 33 | 绘图环境就地渲染：卡片按钮 / standalone 判定 / **补 ctex（不补会静默缺字）** / 两级导言 / 真编一次 + 缓存 / 不碰工作区 / 三边白名单对账 | v0.9.12 |
 | 34 | 就地编辑浮层里的图：`loadAssetsIn` 收回调、新增 `loadPopAssets` 走同一条通道、图到货 / 解码后重摆位、降级也回调 | v0.9.13 |
+| 35 | 面板源码是产物：包内 `panels/*.tsx` 占位符清零、内核（LPC / WYS / TX）真定义、两种包形态同源、包内实读与 manifest 逐字节一致 | v0.9.14 |
 
 
 > 层号有两个体系，别混。各 check 脚本注释里引用的层号（如 `check-v0827-span.js` 自称「层 [25]」）
@@ -105,7 +106,8 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 > （而主门禁本来就有 ~120s），而引擎依赖本来就有兜底 ——
 > 没有引擎时「真编译集成」「缺字对照」改判 skip，不是 xelatex 时「尺寸对账」也改判 skip，
 > 退出码仍是 0（脚本里 6 处 `SKIP` + 一处 `engineExact` 判定）。
-> **skip ≠ 假绿**，所以它已按版本顺序接回主门禁（第 33 层），v0.9.13 顺延为第 34 层。
+> **skip ≠ 假绿**，所以它已按版本顺序接回主门禁（第 33 层），v0.9.13 顺延为第 34 层；
+> v0.9.14（面板源码是产物）接在其后，为第 35 层。
 > 教训和 v0.9.12 自己那条一样：**「这层不进主门禁」这种话，得拿秒表说过。**
 
 单层重跑（红哪层跑哪层，按上表编号）：
@@ -137,6 +139,7 @@ node .setup/check/v0910-title-inline.js      # 31 标题里的字体声明
 node .setup/check/v0911-tikz-popup.js        # 32 绘图环境 / 浮层摆位
 node .setup/check/v0912-graphic-render.js    # 33 绘图环境就地渲染（含真编译 + 与作者产物逐像素对账；无引擎时相关项 skip）
 node .setup/check/v0913-pop-assets.js        # 34 浮层里的图没人补
+node .setup/check/v0914-panel-inline.js      # 35 面板源码是产物（包不在时「包内对账」改判 skip；验旧包：NOTRAT_ZIP=notrat-latex-plugin-0.9.13.zip …）
 ```
 
 

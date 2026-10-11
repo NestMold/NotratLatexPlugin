@@ -5,7 +5,7 @@
 > - 顺序是**写作顺序**，不是语义化版本顺序：有些补丁版是在后续版本之后才补记的（例如 §v0.4.1 排在 §v0.4.0 之前）。
 > - 「版本速览」= 原 README 开头那面版本摘要墙，原样保留。
 > - 各节里形如「详见 §v0.7.2」的交叉引用都指向本文件内的章节。
-> - 当前 `manifest.json` 版本为 **0.9.13**，本日志记录到 **v0.9.13**。
+> - 当前 `manifest.json` 版本为 **0.9.14**，本日志记录到 **v0.9.14**。
 > - ⚠ **v0.8.28 … v0.9.5 这八条是补记的**（当时只写了代码与验收层，日志一直欠着）。
 >   取证来源是代码注释、`.setup/gate-v070.js` 的层清单与 `docs/`，每条开头都标了取证位置。
 >   补记能保证的是**结论可复核**（照位置读、照命令跑），不能保证的是当时的措辞与情绪 ——
@@ -65,6 +65,7 @@
 - [v0.9.12 — 绘图环境「点一下就地渲染」（预览里直接看到那张图）](#v0912--绘图环境点一下就地渲染预览里直接看到那张图)
 - [v0.9.11 — 绘图环境不当正文排 / 浮层按实测尺寸摆位](#v0911--绘图环境不当正文排--浮层按实测尺寸摆位)
 - [v0.9.13 — 就地编辑浮层里的图没人补（页面上有图，点开只剩一行文件名）](#v0913--就地编辑浮层里的图没人补页面上有图点开只剩一行文件名)
+- [v0.9.14 — 装 zip 的必崩：面板源码不是成品（ReferenceError: TX is not defined）](#v0914--装-zip-的必崩：面板源码不是成品（referenceerror-tx-is-not-defined）)
 
 ---
 
@@ -3994,3 +3995,128 @@ version: 0.9.13 | 内联组件数: 2
 
 `manifest` 与包**必须一起动** —— 只动一边，`v0912` 门禁的「装机包版本号与 manifest 一致」立刻红。
 所以这一版是「改代码 → 加验收层 → 提版本号 → 重打包 → 重跑各层」一条链走完的，中间不留半成品状态。
+
+---
+
+## v0.9.14 — 装 zip 的必崩：面板源码不是成品（ReferenceError: TX is not defined）
+
+**取证位置**：`panels/editor.tsx` 与 `panels/code-renderer.tsx` 文件头那几行占位注释
+（`/*__LPC__*/` / `/*__WYS__*/` / `/*__TX__*/`），`.setup/lib/panel-inline.js`（**新增**：内核改写 + 占位符替换 + 包内实读的**唯一实现**），
+`.setup/release-zip.js`（打包脚本：本版从被忽略的 `.setup/_release-v0913.js` 挪进版本控制，新增第 2.6 步与 5.5 包内实读），
+`.setup/check/v0914-panel-inline.js`（**新增**验收层），`.setup/doctor.js`（**新增** [3.5] 节），
+`.setup/make-market-payload.mjs`（`mcpTools` 改为从包内真读）。
+
+### 一、用户报的那句话
+
+```
+ReferenceError: TX is not defined
+    at wysHistFor (eval at pluginEditorBridge.tsx:127:27, <anonymous>:42:5)
+    ...
+    at commitHookEffectListMount      ← 挂载 effect 里第一次碰历史就炸
+```
+
+装单文件包（`npm run build` 产出的那个 JSON）一切正常，**装 zip 必崩**。
+
+### 二、为什么会这样（三条合起来才成立）
+
+1. **面板源不是成品。** `panels/editor.tsx` 文件头几行是占位注释，三块内核
+   （`preview-core` / `wysiwyg` / `txlog`）靠打包时**内联**进去 —— 文件本身跑不起来。
+2. **宿主对面板源码是「读到什么编译什么」。** 只用 TypeScript **抹语法**，
+   不解析模块、也**不查自由变量**（esbuild 同样不报）。所以一份没内联的面板装上后一切正常，
+   直到打开 `.tex`：挂载 effect 里第一次碰历史，`new TX.History(...)` 才抛。
+   更难的是异常会被各处的 `try/catch` 咽掉 —— 表现成「撤销失灵」，白屏之外最难查的一类。
+3. **内联这一步一直只服务于单文件包。** `build-singlefile.js` 会内联；发行 zip 只把内联结果
+   写进了 manifest，**从没管过 zip 里的 `panels/*.tsx`**。而宿主对**目录包**的契约恰恰是
+   「缺 source 时按 `sourceFile` 去目录里读真实文件」—— 读到的就是那几个带占位符的文件。
+
+把仓库里留档的 8 个 zip 逐个解开实读（0.9.3 → 0.9.13）：**每一个**的 `panels/editor.tsx` 三个占位符都在、
+都没有 `const TX = (function`，`panels/code-renderer.tsx` 也一直带着 `__LPC__`。
+所以这不是某一版的回归，**是 zip 这条渠道从有起就没通过**。
+
+同一根因还带着一处**静默降级**：zip 那份内联少了 `renderInlineHtml` —— 同一个面板两种包形态的
+**内核不一样**，zip 装的人「行内 HTML 渲染」不生效（面板那处有 `typeof` 兜底，不报错、只是不生效）。
+这一条不是推论，是本版对账时独立红出来的一项（命中 2/3）。
+
+### 三、改了什么（五处，缺一不可）
+
+| # | 位置 | 改动 | 不改会怎样 |
+| --- | --- | --- | --- |
+| ① | `.setup/lib/panel-inline.js`（新增） | 三块内核的改写 / 占位符替换 / 包内实读（`readZipEntry`）收成**一份**实现（对外 `buildKernels` / `inlinePanel` / `tokensIn` / `hasKernelDefs` / `needsInline`） | 同一套规则原来抄三份（`build-singlefile.js`、发行脚本、`check-v070.js`）。抄三份的代价不是多打几个字：zip 那份少的正是 `renderInlineHtml` |
+| ② | `.setup/release-zip.js` 第 **2.6** 步（新增） | manifest 引用到的 `panels/*.tsx` **写回内联产物**（直接用 manifest 里那一份，逐字节一致，不是重跑一次改写）；其余带占位符的面板（如 `code-renderer.tsx`，它靠 `typeof LPC === "undefined" ? null : LPC` 兜了一手）也顺带内联 | 目录包读到什么编译什么 → 打开 `.tex` 就 `TX is not defined` |
+| ③ | `.setup/release-zip.js` 第 **5.5** 步（新增） | 打包**当场解包实读**：任何 `panels/*.tsx` 不许带占位符；manifest 引用到的每一份与 manifest 那份逐字节一致；三块内核齐全、且 `LPC` 必须带 `renderInlineHtml` | 「条目名对了 ≠ 内容是产物」。不实读，这条路坏下去没人知道 —— 而它已经坏了八个版本 |
+| ④ | 打包脚本挪进版本控制（`.setup/release-zip.js`） | `.gitignore` 里 `.setup/**/_*` 把下划线开头的文件整片当一次性脚本，而 v0.9.13 的打包脚本就叫 `_release-v0913.js` ⇒ **打包这一步从来没进过仓库** | 修法只能落在本地工作区：谁 clone 谁拿到旧行为。打包是发行的必经之路，得能被 review、能被 diff（老命令留了一行壳，仍可用） |
+| ⑤ | `.setup/build-singlefile.js`、`.setup/check-v070.js` | 改用同一份实现，不再各带一份规则 | 门禁必须测**真产物**；规则散在多处，测的就不是用户拿到的那个东西 |
+
+另外三笔顺带（同一根因的账）：
+
+- **`.setup/doctor.js` 新增 [3.5] 节「面板源码能不能编译」**：纯正则、零依赖，只看三件事 ——
+  占位符清干净没、三块内核有没有定义、目录包形态下**面板文件本身是不是产物**。
+  换机器的人手上只有这个 zip，不该等他打开 `.tex` 白屏才发现。
+- **`.setup/make-market-payload.mjs` 的 `mcpTools` 改为从包内 `server/index.js` 真读**，少于 12 个
+  直接报错退出（不让清单静默变短）。手抄会漂：v0.9.12 新加的 `latex_render_graphic` 就这么漏过一次 ——
+  市场详情页对不上包，用户照详情页排查会以为工具不存在。
+- **收拢规则时给 `npm run build` 留了一处未清的引用，而门禁没拦住**：
+  `build-singlefile.js` 里还写着一句 `src.includes(LPC_TOKEN)`，而 `LPC_TOKEN` 已随规则收进 lib、
+  本文件不再定义 —— 跑 `npm run build` 就是 `ReferenceError: LPC_TOKEN is not defined`，
+  而**门禁 35 层照样全绿**（它跑的是 `check-v070.js` 那份离线编译，不跑这个入口）。
+  发版路径上 `npm run build` 是必经一步（装机单文件包），当场修掉；
+  但「门禁不覆盖打包入口」这件事本身没修 —— 它是另一个题目。记在这里，免得下次又以为
+  「全绿」等于「发版路径全通」。
+
+### 四、这一层是怎么验收的
+
+`.setup/check/v0914-panel-inline.js`（主门禁第 35 层），六个面：
+
+| 面 | 钉什么 |
+| --- | --- |
+| `[A]` 复现 | ★ 拿仓库里那份**原始**面板（带占位符），按宿主同款方式编译 + 真求值 → **必须报出与用户同字的** `TX is not defined`（证明这条通路真的会崩，也证明本层看得见它 —— 断言恒真是门禁最大的敌人） |
+| `[B]` 修法 | 同一份面板经 lib 内联 → 同样真求值：`TX` / `WYS` / `LPC` 都是真对象；★ 用户崩的那一句 `new TX.History({base, limit})` 与栈里那个 `wysHistFor()` 都跑得通；★ `LPC.renderInlineHtml` 是函数 |
+| `[C]` 不漂移 | 两种包形态（装机单文件包 / 发行 zip）的内核必须与唯一实现**逐字节**一致 —— 「同一份规则抄三份」正是这次的根因，内核漂了要当场红 |
+| `[D]` 包内对账 | 真把 zip 解开读字节：每份 `panels/*.tsx` 不许带占位符，且与 manifest 里那份逐字节一致 |
+| `[E]` 宿主契约 | 从**装机版** app.asar 确认宿主编译的是 manifest 里的 `source` 字符串；哪天改成按路径读文件（正是用户那条栈里 `pluginEditorBridge` 的形状），这条会红，提醒回来重读契约 |
+| `[F]` 反向自检 | 把内联结果里的 `TX` / `LPC` / `WYS` 逐个抹掉，`[B]` 必须**重新变红**（否则 `[B]` 恒真） |
+
+旧包随时可以验红（本版动手前第一件事就是这个）：
+
+```
+NOTRAT_ZIP=notrat-latex-plugin-0.9.13.zip node .setup/check/v0914-panel-inline.js
+→ ✗ 通过 18 / 失败 4     （内核命中 2/3：少 renderInlineHtml；包内面板对账三条全红）
+```
+
+打包是单独一步（打完才谈得上「包内对账」），所以这一层有条约规矩：**包不存在、或比修复本身还老
+→ 改判 skip，并把重打包命令写进理由**。「修复前打的包」判红是无意义的红（它本来就没带修法），
+但**必须说出来**；判绿的假绿更糟。本版重打包之后这两条转成真判：**22 项全跑、0 skip**。
+
+### 五、版本号与装机包（已收尾）
+
+`manifest.json` / README 徽章 / CHANGELOG 抬头与目录 / `docs/DEVELOPMENT.md` 层表一起到 **0.9.14**，
+装机单文件包与发行 zip 都重打过：
+
+```
+written C:\Users\Administrator\.notrat\plugins\notrat-latex-plugin.json  438.8KB
+version: 0.9.14 | 内联组件数: 2
+```
+
+装机核验（不靠读源码：把那份 JSON 读进来抠出面板源码，再查关键字）——
+`new TX.History(` / `LPC.renderInlineHtml` / 三块内核定义都在，占位符 0 个；
+13 个 MCP 工具齐，面板 8 个调用点全在 `tools/list` 里。
+
+打包脚本第 1 步是 `git archive HEAD`（白名单只取 `manifest.json` / `panels` / `server` / `.setup/doctor.js`），
+所以发行 zip 是**从 HEAD 提取**的 —— 「提版本号 → 提交 → 重打包」是有先后顺序的，
+这点也写进脚本头了。顺带解释掉一个之前没人问的问题：那八个半成品包为什么一直没被发现 ——
+打包这一步既没进仓库（见 ④），又依赖 HEAD 的状态。
+
+发行包 `notrat-latex-plugin-0.9.14.zip`：21 个条目、760KB、包内 7 份 `panels/*.tsx` 全无占位符、
+2 份与 manifest 逐字节一致、内核 LPC / WYS / TX 齐全 —— 打包脚本第 5.5 步的实读输出。
+
+### 六、本版没动的（留给下一版）
+
+- **段落里的 `\bfseries`** 照旧按文字显示（0.9.10 的「源码可信」设计），要改成编辑区也当场生效，
+  得让 DOM → 源码的回写通路盯住每一段状态，风险远大于收益。
+- **浮层里的绘图卡不会回填已渲染的图**（`gfxRestore` 与 `loadAssetsIn` 同一个形状的缺口）。
+  v0.9.13 就记下了，本版继续不动：两件事混在一个补丁里，出了错分不清是谁的。
+- **浮层里的段落间距与页面不同版**：改法是一行（`.pv-root p,.wys-pop-pv p{…}`），但它是视觉细节、
+  不是谁报的病。
+- **市场详情页那份上架产物没跟着重做**（`release/`、`make-market-payload.mjs`）。这一版发了 zip、
+  没有上架：那一步的产物是另一条线（上一版也是单独一次提交），而且它 `notes` 里的文案还停在
+  「v0.9.10 → v0.9.13 四版累积修复」——下次上架时得连带改掉，别让详情页对不上包。

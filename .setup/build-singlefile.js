@@ -22,65 +22,37 @@ const ws = "E:/notrat-latex-plugin";
 const VERSION = JSON.parse(fs.readFileSync(path.join(ws, "manifest.json"), "utf8")).version;
 
 const editorSrc = fs.readFileSync(path.join(ws, "panels/editor.tsx"), "utf8");
-let core = fs.readFileSync(path.join(ws, "server/preview-core.js"), "utf8");
 const m = JSON.parse(fs.readFileSync(path.join(ws, "manifest.json"), "utf8"));
 
-/* ---------- preview-core：末行 CJS 导出 → 内联常量 ---------- */
-core = core.replace(
-  /^module\.exports\s*=\s*\{[^}]*\};?[^\S\n]*$/m,
-  "const LPC = { renderPreview: renderPreview, miniMath: miniMath, renderInlineHtml: renderInlineHtml };"
-);
-if (!/^const LPC = \{ renderPreview/m.test(core)) {
-  console.error("preview-core 导出语句改写失败（未找到行首的导出语句）");
-  process.exit(1);
-}
+/* ---------- 三块内核：唯一实现见 .setup/lib/panel-inline.js（v0.9.14 收拢）----------
+ * 这里原来自带一份改写规则，与发行 zip（.setup/_release-v0913.js）那份**逐字漂移**过：
+ * zip 那份少了 renderInlineHtml → 同一个面板两种包形态的内核不一样，zip 装的用户
+ * 「行内 HTML 渲染」静默失效（面板那处 typeof 兜底，不报错、只是不生效）。
+ * 现在两份包形态共用同一个 buildKernels()，规则只有一份，漂不了。
+ *
+ * ⚠ 改写后不得残留 module.exports —— 它会把宿主准备好的 exports 覆盖成内核对象，
+ *   宿主 interop 再包成 {default: 对象}，编辑器报「default 应为 function，
+ *   实际为 object」（0.3.0 事故）。拦这条的断言在内联函数里。 */
+const pack = require(path.join(ws, ".setup", "lib", "panel-inline.js"));
+const KERNELS = pack.buildKernels(ws);
+const core = KERNELS.LPC;
+const wysSrc = KERNELS.WYS;
+const txSrc = KERNELS.TX;
 
-/* ---------- wysiwyg 块模型内核：末行 CJS 导出 → 内联常量 ----------
- * 与 preview-core 同一条通路。导出对象内不得出现嵌套花括号（下面正则用 [^}]* 匹配）。
- * ⚠ 改写后不得残留 module.exports —— 那会把宿主 exports 覆盖成内核对象，
- *   编辑器报「default 应为 function，实际为 object」（0.3.0 事故）。 */
-const wysRaw = fs.readFileSync(path.join(ws, "server/wysiwyg.js"), "utf8");
-/* 导出语句 → return，然后整份包进 IIFE：
- *   内核里的 escHtml / readGroup / findEnvEnd 与 preview-core 同名，
- *   两份都摊在顶层会被 esbuild 判「已声明」（顶层不允许重名）。 */
-const wysBody = wysRaw.replace(/^module\.exports\s*=\s*\{([^}]*)\};?[^\S\n]*$/m, "return {$1};");
-if (!/^return \{/m.test(wysBody)) {
-  console.error("wysiwyg 导出语句改写失败（未找到行首的导出语句）");
-  process.exit(1);
-}
-const wysSrc = "const WYS = (function () {\n" + wysBody + "\n})();"
-
-/* ---------- 事务历史内核（txlog.js）：与 preview-core / wysiwyg 同一条通路 ----------
- * 预览层的 commit / rebase / undo / redo 全在它里面。内联不进去，编辑器一碰历史就是
- * ReferenceError —— 而那个异常会被各处 try/catch 咽掉，看起来就像「撤销失灵」。
- * 与 wysiwyg 同样的约束：末行那条导出语句换成 return（正则用 [^}]* 匹配，
- * 导出对象里不许出现嵌套花括号），整份包 IIFE 后摊在顶层不重名。 */
-const txRaw = fs.readFileSync(path.join(ws, "server/txlog.js"), "utf8");
-const txBody = txRaw.replace(/^module\.exports\s*=\s*\{([^}]*)\};?[^\S\n]*$/m, "return {$1};");
-if (!/^return \{/m.test(txBody)) {
-  console.error("txlog 导出语句改写失败（未找到行首的导出语句）");
-  process.exit(1);
-}
-const txSrc = "const TX = (function () {\n" + txBody + "\n})();";
-
-/* ---------- 逐条内联贡献面源码 ---------- */
-const LPC_TOKEN = "/*" + "__LPC__" + "*/";
-const WYS_TOKEN = "/*" + "__WYS__" + "*/";
-const TX_TOKEN = "/*" + "__TX__" + "*/";
-
+/* ---------- 逐条内联贡献面源码 ----------
+ * 编辑器（editors[]）三块内核一个都不能少：少哪块，面板里那半边就是自由变量，
+ * 编译期不报错、运行到那一句才 ReferenceError（还会被各处的 try/catch 咽掉）。 */
 function inline(src, label) {
-  let out = src;
-  if (out.split(LPC_TOKEN).length > 1) out = out.split(LPC_TOKEN).join(core);
-  else console.warn("  ! " + label + " 未包含 LPC 占位注释（预览能力将不可用）");
-  if (out.split(WYS_TOKEN).length > 1) out = out.split(WYS_TOKEN).join(wysSrc);
-  else if (label.indexOf("editors[") === 0) console.warn("  ! " + label + " 未包含 WYS 占位注释（就地编辑不可用）");
-  if (out.split(TX_TOKEN).length > 1) out = out.split(TX_TOKEN).join(txSrc);
-  else if (label.indexOf("editors[") === 0) console.warn("  ! " + label + " 未包含 TX 占位注释（撤销历史不可用）");
-  if (out.includes("module.exports")) {
-    console.error("致命：" + label + " 注入后仍含 module.exports（会覆盖宿主 exports → default 变 object）");
-    process.exit(1);
+  const isEditor = label.indexOf("editors[") === 0;
+  const r = pack.inlinePanel(src, KERNELS, {
+    label: label,
+    required: isEditor ? ["LPC", "WYS", "TX"] : []
+  });
+  for (const n of r.missing) {
+    if (n === "LPC") console.warn("  ! " + label + " 未包含 LPC 占位注释（预览能力将不可用）");
+    else if (isEditor) console.warn("  ! " + label + " 未包含 " + n + " 占位注释（该能力将不可用）");
   }
-  return out;
+  return r.text;
 }
 
 m.version = VERSION;
@@ -114,7 +86,9 @@ for (const u of m.contributions.ui || []) {
     console.error("致命：UI 面板 " + u.id + " 源码含 module.exports");
     process.exit(1);
   }
-  if (src.includes(LPC_TOKEN)) src = inline(src, "ui[" + u.id + "]");
+  /* 占位符判据统一走 lib（v0.9.14 收拢规则时这里漏改过：LPC_TOKEN 已经不在本文件了，
+   * 而门禁不跑 `npm run build`，于是它带着一处 ReferenceError 过了全绿 —— 见 CHANGELOG v0.9.14）。 */
+  if (pack.needsInline(src)) src = inline(src, "ui[" + u.id + "]");
   c.source = src;
   delete c.sourceFile;
   n++;

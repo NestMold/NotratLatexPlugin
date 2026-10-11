@@ -13,43 +13,22 @@ const os = require("os");
 
 const ws = "E:/notrat-latex-plugin";
 
-/* ---- preview-core：末行导出 → 顶层常量 ---- */
-let core = fs.readFileSync(path.join(ws, "server/preview-core.js"), "utf8");
-core = core.replace(
-  /^module\.exports\s*=\s*\{[^}]*\};?[^\S\n]*$/m,
-  "const LPC = { renderPreview: renderPreview, miniMath: miniMath, renderInlineHtml: renderInlineHtml };"
-);
-if (!/^const LPC = \{ renderPreview/m.test(core)) { console.error("LPC 改写失败"); process.exit(1); }
+/* 三块内核 + 占位符替换：唯一实现见 .setup/lib/panel-inline.js（v0.9.14 收拢）
+ * 这里原来自带一份改写规则（第三份）。抄三份的账记在 lib 文件头：发行 zip 那份少写了
+ * renderInlineHtml，两种包形态的内核就不一样了。门禁必须测**真产物**，
+ * 所以它和打包脚本共用同一份规则，不再各自维护。 */
+const pack = require(path.join(ws, ".setup", "lib", "panel-inline.js"));
+const KERNELS = pack.buildKernels(ws);
 
-/* ---- wysiwyg：末行导出 → return，整份包进 IIFE ---- */
-const wysRaw = fs.readFileSync(path.join(ws, "server/wysiwyg.js"), "utf8");
-const wysBody = wysRaw.replace(/^module\.exports\s*=\s*\{([^}]*)\};?[^\S\n]*$/m, "return {$1};");
-if (!/^return \{/m.test(wysBody)) { console.error("WYS 改写失败"); process.exit(1); }
-const wys = "const WYS = (function () {\n" + wysBody + "\n})();";
-/* v0.8.18：txlog 与 wysiwyg 同一条内联通路（缺了它，预览层的历史在离线编译里就是
- * ReferenceError —— 被 try/catch 咽掉，看起来像「撤销没实现」）。 */
-const txRaw = fs.readFileSync(path.join(ws, "server/txlog.js"), "utf8");
-const txBody = txRaw.replace(/^module\.exports\s*=\s*\{([^}]*)\};?[^\S\n]*$/m, "return {$1};");
-if (!/^return \{/m.test(txBody)) { console.error("TX 改写失败"); process.exit(1); }
-const txk = "const TX = (function () {\n" + txBody + "\n})();";
-
-const LPC_TOKEN = "/*" + "__LPC__" + "*/";
-const WYS_TOKEN = "/*" + "__WYS__" + "*/";
-const TX_TOKEN = "/*" + "__TX__" + "*/";
-
-let src = fs.readFileSync(path.join(ws, "panels/editor.tsx"), "utf8");
+let src = fs.readFileSync(path.join(ws, "panels", "editor.tsx"), "utf8");
 const checks = [];
-const nLpc = src.split(LPC_TOKEN).length - 1;
-const nWys = src.split(WYS_TOKEN).length - 1;
-const nTx = src.split(TX_TOKEN).length - 1;
-if (nLpc !== 1) checks.push("LPC 占位符应为 1 个，实际 " + nLpc);
-if (nWys !== 1) checks.push("WYS 占位符应为 1 个，实际 " + nWys);
-if (nTx !== 1) checks.push("TX 占位符应为 1 个，实际 " + nTx);
+for (const n of pack.NAMES) {
+  const c = src.split(pack.TOKENS[n]).length - 1;
+  if (c !== 1) checks.push(n + " 占位符应为 1 个，实际 " + c);
+}
 if (checks.length) { console.error("✗ " + checks.join("; ")); process.exit(1); }
 
-src = src.split(LPC_TOKEN).join(core);
-src = src.split(WYS_TOKEN).join(wys);
-src = src.split(TX_TOKEN).join(txk);
+src = pack.inlinePanel(src, KERNELS, { label: "panels/editor.tsx", required: pack.NAMES }).text;
 if (src.includes("module.exports")) { console.error("✗ 内联后仍含 module.exports（0.3.0 事故）"); process.exit(1); }
 
 /* ---- esbuild 编译（绝对路径，避开 npx 缓存的版本打架） ---- */
