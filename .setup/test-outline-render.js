@@ -77,6 +77,9 @@ const React = {
     return hooks.deps[i].v;
   },
   useCallback: function (fn) { cursor++; return fn; },
+  /* v0.9.11：产物里 import 了 useLayoutEffect（浮层摆位要在 paint 之前算）。
+   * 这一层是假 DOM，没有 paint —— 与 useEffect 同一套语义即可；但**键不能缺**。 */
+  useLayoutEffect: function (fn, deps) { return React.useEffect(fn, deps); },
   useRef: function (init) {
     const i = cursor++;
     if (!(i in hooks.refs)) hooks.refs[i] = { current: init };

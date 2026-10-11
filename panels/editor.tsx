@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 /*__LPC__*/
 /*__WYS__*/
 /*__TX__*/
@@ -103,6 +103,27 @@ const PV_CSS = `
 .pv-marg{display:inline-block;max-width:240px;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.45);border-radius:6px;padding:1px 8px;margin-left:6px;vertical-align:middle;text-align:left}
 .pv-tocph{border:1px dashed hsl(var(--border));border-radius:10px;padding:16px;margin:16px 0;text-align:center;color:hsl(var(--muted-foreground));font-size:13px;background:hsl(var(--muted)/.25)}
 .pv-tocmini{display:inline-block;margin:6px 0;padding:2px 10px;border-radius:999px;font-size:12px;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.5)}
+/* v0.9.11：绘图环境（TikZ 家族）的占位卡 —— 说得清是什么图，又把源码原样收着。
+ * 以前这一块是「代码当正文排」：花括号与方括号参数漏成散文（见 preview-core 的 GRAPHIC_ENVS）。 */
+.pv-graphic{border:1px dashed hsl(var(--border));border-radius:10px;margin:14px 0;padding:10px 12px;background:hsl(var(--muted)/.22);text-align:left}
+.pv-graphic-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pv-graphic-badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;color:hsl(var(--primary));background:hsl(var(--primary)/.13)}
+.pv-graphic-say{font-size:12.5px;color:hsl(var(--muted-foreground))}
+.pv-graphic-code{position:relative;margin:8px 0 0;max-height:92px;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;font-family:Consolas,'Courier New',monospace;font-size:11.5px;line-height:1.55;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.42);border-radius:6px;padding:6px 8px}
+.pv-graphic-code::after{content:"";position:absolute;left:0;right:0;bottom:0;height:26px;background:linear-gradient(to bottom,transparent,hsl(var(--muted)/.42))}
+/* ---- v0.9.12：绘图卡「就地渲染」（按钮 / 状态 / 图体 / 源码折叠） ----
+ * 图体给白底：栅格出来的 PNG 是 24 位 RGB（底色就是白的），
+ * 深色主题下不给白底，图的四周会跟卡片背景糊成一片，看着像被裁过。 */
+.pv-graphic-btn{font:inherit;font-size:12px;line-height:1.75;padding:1px 10px;border-radius:999px;border:1px solid hsl(var(--primary)/.45);background:hsl(var(--primary)/.1);color:hsl(var(--primary));cursor:pointer}
+.pv-graphic-btn:hover{background:hsl(var(--primary)/.2)}
+.pv-graphic-btn[disabled]{opacity:.55;cursor:default}
+.pv-graphic-fold{font:inherit;font-size:12px;line-height:1.75;padding:1px 8px;border-radius:999px;border:1px solid hsl(var(--border));background:transparent;color:hsl(var(--muted-foreground));cursor:pointer}
+.pv-graphic-st{font-size:12px;color:hsl(var(--muted-foreground));overflow-wrap:break-word}
+.pv-graphic-st[data-bad="1"]{color:hsl(0 72% 45%)}
+.pv-graphic-body:empty{display:none}
+.pv-graphic-body{margin:8px 0 0;text-align:center;line-height:0}
+.pv-graphic-img{max-width:100%;height:auto;border-radius:4px;background:#fff}
+.pv-graphic[data-graphic-folded="1"] .pv-graphic-code{display:none}
 .wys-inc{margin:8px 0 2px;border:1px solid hsl(var(--border));border-left:3px solid hsl(var(--primary)/.55);border-radius:10px;overflow:hidden;background:hsl(var(--muted)/.14)}
 .wys-inc-h{padding:6px 12px;font-size:12px;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.35);border-bottom:1px solid hsl(var(--border));display:flex;justify-content:space-between;gap:8px;cursor:pointer;user-select:none}
 .wys-inc-h:hover{color:hsl(var(--foreground))}
@@ -224,11 +245,11 @@ ef / 行内公式，见文件前段）撞名：
 .wys-num{color:hsl(var(--muted-foreground));font-weight:600;margin-right:.45em;user-select:none}
 /* ---------- 就地编辑浮层：在**原地**改公式 / 引用 / 图表，不跳源码视图 ---------- */
 .wys-pop-dim{position:fixed;inset:0;z-index:59;background:transparent}
-.wys-pop{position:fixed;z-index:60;width:min(540px,92vw);box-sizing:border-box;border:1px solid hsl(var(--border));border-radius:10px;background:hsl(var(--popover));box-shadow:0 14px 38px rgba(0,0,0,.34);padding:8px}
-.wys-pop-pv{min-height:36px;display:flex;align-items:center;justify-content:center;padding:5px 8px;border-radius:6px;background:hsl(var(--muted)/.38);overflow:auto}
+.wys-pop{position:fixed;z-index:60;width:min(540px,92vw);max-height:calc(100vh - 16px);display:flex;flex-direction:column;box-sizing:border-box;border:1px solid hsl(var(--border));border-radius:10px;background:hsl(var(--popover));box-shadow:0 14px 38px rgba(0,0,0,.34);padding:8px}
+.wys-pop-pv{min-height:36px;max-height:38vh;display:flex;align-items:center;justify-content:center;padding:5px 8px;border-radius:6px;background:hsl(var(--muted)/.38);overflow:auto}
 .wys-pop-pv>:first-child{margin-top:0}
 .wys-pop-pv>:last-child{margin-bottom:0}
-.wys-pop-ta{width:100%;box-sizing:border-box;margin-top:7px;border:1px solid hsl(var(--border));border-radius:6px;background:hsl(var(--background));color:hsl(var(--foreground));font-family:Consolas,'Courier New',monospace;font-size:12.5px;line-height:1.6;padding:6px 8px;outline:none;resize:vertical}
+.wys-pop-ta{width:100%;box-sizing:border-box;margin-top:7px;border:1px solid hsl(var(--border));border-radius:6px;background:hsl(var(--background));color:hsl(var(--foreground));font-family:Consolas,'Courier New',monospace;font-size:12.5px;line-height:1.6;padding:6px 8px;outline:none;resize:vertical;max-height:42vh}
 .wys-pop-ta:focus{border-color:hsl(var(--primary)/.6)}
 .wys-pop-h{font-size:11px;color:hsl(var(--muted-foreground));padding:0 2px 5px;display:flex;align-items:center;gap:6px}
 .wys-pop-h b{color:hsl(var(--foreground));font-weight:600}
@@ -318,6 +339,24 @@ function wysInline(text, renderMath) {
     out += WYS.escHtml(String(g.v == null ? "" : g.v));
   }
   return out;
+}
+
+/* 页首（\title / \author / \date）的行内渲染：与只读预览**同一套**内核。
+ * v0.9.10：以前这里走 wysInline —— 那是「源码可信」的编辑层渲染，会把 \bfseries 与
+ * \\[5pt] 原样当文字摊出来，标题就长成了一行代码（用户原话「这类显示还是没有修复呢」）。
+ * 页首这一块本来就不可编辑（要改它得点开就地编辑器），显示上就该跟成品一致：
+ * \bfseries 加粗、\large 小一号、\\ 换行、\LaTeX 出标志。文本本身仍由 data-tex 原样带回。
+ * LPC 没内联进来时（单测 / 老包）退回 wysInline，不抛。 */
+function wysFmPreview(body, renderMath, baseDir, sizeBase) {
+  const s = String(body == null ? "" : body);
+  if (typeof LPC !== "undefined" && LPC && typeof LPC.renderInlineHtml === "function") {
+    try {
+      /* 页首不参与行跳转：内核给 \ref 挂的 data-line 一律剥掉，免得点标题跳错行 */
+      return LPC.renderInlineHtml(s, { renderMath: renderMath, baseDir: baseDir || "", sizeBase: sizeBase })
+        .replace(/ data-line="\d+"/g, "");
+    } catch (e) { /* 退回下面 */ }
+  }
+  return wysInline(s, renderMath);
 }
 
 /* 反方向：DOM → LaTeX。原子带 data-tex 原样吐回；其余按 nodeValue 取回。 */
@@ -845,9 +884,9 @@ function wysRenderDoc(src, renderMath, baseDir, inc) {
            * 这个容器本身不是编辑区：光标停进来敲的字没有归属，块模型看不见。
            * 关掉它的可编辑性 —— 点仍然点得开（点在 .wys-fmline 上照旧进 openAtom）。 */
           inner += '<div class="wys-front-head" contenteditable="false">';
-          if (fm.title) inner += '<div class="wys-front-t">' + wysFmLine(fm.title, "标题", "fm:title", "", wysInline(fm.title.body, renderMath)) + "</div>";
-          if (fm.author) inner += '<div class="wys-front-a">' + wysFmLine(fm.author, "作者", "fm:author", "", wysInline(fm.author.body, renderMath)) + "</div>";
-          if (fm.date) inner += '<div class="wys-front-d">' + wysFmLine(fm.date, "日期", "fm:date", "", wysInline(fm.date.body, renderMath)) + "</div>";
+          if (fm.title) inner += '<div class="wys-front-t">' + wysFmLine(fm.title, "标题", "fm:title", "", wysFmPreview(fm.title.body, renderMath, baseDir, 1.728)) + "</div>";
+          if (fm.author) inner += '<div class="wys-front-a">' + wysFmLine(fm.author, "作者", "fm:author", "", wysFmPreview(fm.author.body, renderMath, baseDir, 1.2)) + "</div>";
+          if (fm.date) inner += '<div class="wys-front-d">' + wysFmLine(fm.date, "日期", "fm:date", "", wysFmPreview(fm.date.body, renderMath, baseDir, 1.2)) + "</div>";
           inner += "</div>";
         }
         const chips = [];
@@ -928,12 +967,38 @@ function countWords(text) {
   return { cjk: cjk, latin: latin, total: cjk + latin };
 }
 
-/* 划词引用气泡定位：钳制在视口内 */
+/* 浮层摆位：量完再摆（v0.9.11）
+ * 用户原话「这些弹窗无法自适应位置」。旧版拿两个**写死的常数**当浮层尺寸
+ * （就地编辑浮层按 556x220、引用气泡按 190x56），量都不量：
+ *   · 文本域一撑开（最多 14 行 ≈ 300px）浮层就钻出下边界，最底下的东西够不着；
+ *   · 面板一窄（分屏 / 只开预览）右边被推出屏幕；窗口本身矮时更别提。
+ * 现在统一走这里：优先贴锚点下沿；下面放不下、上面有地就**翻到上面**；两边都不够就钳进视口。
+ * 宽高一律 offsetWidth / offsetHeight 实量 —— 不再猜。 */
+function fitPopup(el, anchor) {
+  if (!el || typeof window === "undefined") return;
+  const M = 8, GAP = 6;
+  const W = window.innerWidth || 1200;
+  const H = window.innerHeight || 800;
+  const w = el.offsetWidth || 0;
+  const h = el.offsetHeight || 0;
+  const aTop = (anchor.top == null ? anchor.bottom : anchor.top);
+  const below = anchor.bottom + GAP;
+  const flipped = aTop - h - GAP;
+  let top = below;
+  if (below + h > H - M && flipped >= M) top = flipped;
+  top = Math.max(M, Math.min(top, Math.max(M, H - h - M)));
+  const left = Math.max(M, Math.min(anchor.left, Math.max(M, W - w - M)));
+  el.style.left = Math.round(left) + "px";
+  el.style.top = Math.round(top) + "px";
+}
+
+/* 划词引用气泡的锚点。位置**不在这里**定 —— 交给 fitPopup 按实测尺寸摆；
+ * 这里只把鼠标点记下来（ay 是原始鼠标 y，y 是「鼠标下方 14px」的默认落点）。 */
 function clampPos(x, y) {
-  return {
-    x: Math.max(8, Math.min(x || 100, (window.innerWidth || 1200) - 190)),
-    y: Math.max(8, Math.min((y || 100) + 14, (window.innerHeight || 800) - 56)),
-  };
+  const W = (typeof window === "undefined" ? 1200 : window.innerWidth) || 1200;
+  const H = (typeof window === "undefined" ? 800 : window.innerHeight) || 800;
+  const ay = Math.max(0, Math.min(y || 100, H - 8));
+  return { x: Math.max(8, Math.min(x || 100, W - 24)), y: ay + 14, ay: ay };
 }
 
 /* 预览节点向上找 data-line（块级行号锚点） */
@@ -1484,6 +1549,7 @@ export default function LatexEditor(props) {
   const gutterRef = useRef(null);
   const pvRef = useRef(null);
   const bubbleRef = useRef(null);
+  const popRef = useRef(null);
 
   /* ---------- v0.8.9 起：焦点守卫（v0.8.10 泛化到全部瞬态 UI） ----------
    * 症状：按一次 Ctrl+/（或 Esc 关掉就地编辑浮层）之后，编辑器好像"死了" —— 快捷键没反应、
@@ -2700,22 +2766,31 @@ export default function LatexEditor(props) {
   /* 预览 / 富渲染卡片里的图片懒加载（走 MCP 读本地文件 → dataURI）。
    * v0.7.2：改成「每拍补一次还没排队的图」—— 就地编辑层里也有图（卡片是富渲染的），
    * 只在 pv.html 变化时跑会漏掉它们；拿到的 dataURI 进 assetCache，DOM 重建后同步命中。 */
-  function loadAssetsIn(root) {
+  /* v0.9.13：加 done。补图是**异步**的（要走一次 MCP），而图到货会改容器尺寸 ——
+   * 调用方若是「按实测尺寸摆位」的浮层，必须等这一批全落地再摆一次；
+   * 早摆了就是拿「还没有图」那一版的高度钳的位置。 */
+  function loadAssetsIn(root, done) {
     if (!root || !serverId) return;
     const imgs = root.querySelectorAll("img[data-asset]:not([data-asset-queued])");
+    /* 聚合而不是逐张回调：一批图里最后一张落地才算这一拍补完（否则会摆好几次） */
+    let pending = 0;
+    const settle = function () { pending--; if (pending <= 0 && done) done(); };
     for (let i = 0; i < imgs.length; i++) {
       const img = imgs[i];
       const p = img.getAttribute("data-asset");
       if (!p) continue;
       img.setAttribute("data-asset-queued", "1");   // 只排队一次，避免每拍重复发起
       if (assetCache.current.has(p)) { img.src = assetCache.current.get(p); continue; }
-      callTool("latex_asset", { path: p }).then(function (out) {
+      pending++;
+      /* v0.9.12：插图通道 —— 带 kind:image，无扩展名路径按图片优先补全（.tex 垫底） */
+      callTool("latex_asset", { path: p, kind: "image" }).then(function (out) {
         try {
           const a = JSON.parse(out);
-          if (a && a.dataUri) { assetCache.current.set(p, a.dataUri); img.src = a.dataUri; return; }
+          if (a && a.dataUri) { assetCache.current.set(p, a.dataUri); img.src = a.dataUri; settle(); return; }
         } catch (e) { /* fallthrough */ }
         degradeRasterImg(img);
-      }).catch(function () { degradeRasterImg(img); });
+        settle();   // 降级也算「这一张落地了」—— 占位 div 同样会改浮层高度
+      }).catch(function () { degradeRasterImg(img); settle(); });
     }
   }
 
@@ -2728,6 +2803,204 @@ export default function LatexEditor(props) {
     d.textContent = "🖼 " + (img.getAttribute("alt") || "插图") + "（该格式不在预览中渲染，编译 PDF 后可见）";
     img.parentNode.replaceChild(d, img);
   }
+
+  /* v0.9.13：就地编辑浮层里的图，走**同一条**资产通道。
+   *
+   * 浮层的 HTML 是 React 用 dangerouslySetInnerHTML 塞进去的（atomPvHtml），
+   * 而 .wys-pop 是 .pv-root 的**兄弟节点** —— 「每拍补一次」只补 pvRef 那一棵，
+   * 浮层这一棵从来没人管。内核发出的插图标签只有 data-asset、没有 src，
+   * 而浏览器对「无 src 的 img」画的是**不可用态**：显示 alt 文本，alt 就是那个路径。
+   * 于是同一块图：页面上是真的，点开就地编辑只剩一行文件名（figs/fig-five-dim.pdf）。
+   *
+   * 补完必须重摆一次：图进来了浮层才长到该有的高度，「贴下沿 / 翻上方」得拿新尺寸算。
+   * 三条路都要覆盖 ——
+   *   · 缓存命中：loadAssetsIn 同步写 src（不打 MCP），settle 不会被调用；
+   *   · 未命中：MCP 到货后 settle → refit；
+   *   · 而 <img> 拿到 src 之后还要解码才占位，所以每张图的 load / error 再摆一次。
+   * 监听只挂一次（data-popfit）；重摆是幂等的 —— fitPopup 只写 style，不触发布局循环。
+   * 锚点取 atomEditRef（**不是**闭包里的 atomEdit）：effect 闭包抓的是那一拍的旧值。
+   * 图这里**故意不调 gfxRestore**：浮层里的绘图卡回填已渲染的图是另一件事，见 CHANGELOG 文末。 */
+  function loadPopAssets() {
+    const pop = popRef.current;
+    const a = atomEditRef.current;
+    if (!pop || !a) return;
+    const anchor = { left: a.x, bottom: a.ayBottom == null ? a.y : a.ayBottom, top: a.ayTop };
+    const refit = function () { fitPopup(pop, anchor); };
+    loadAssetsIn(pop, refit);
+    const imgs = pop.querySelectorAll("img[data-asset]");
+    for (let i = 0; i < imgs.length; i++) {
+      const im = imgs[i];
+      if (im.getAttribute("data-popfit")) continue;   // 同一张图只挂一次，别随重摆累积
+      im.setAttribute("data-popfit", "1");
+      im.addEventListener("load", refit);
+      im.addEventListener("error", refit);           // 降级成占位 div 也会改高度
+    }
+  }
+
+  /* ================= v0.9.12：绘图环境卡「点一下就地渲染」 =================
+   * 三件事决定了它长成现在这样：
+   *   · 为什么不进视口自动编：一屏 10 张图 = 首屏 ~19 秒的编译风暴（实测单图 ≈1.9s：
+   *     编译 1.58s + 栅格 0.34s）。按需是唯一不会把预览拖死的形状。
+   *   · 为什么编译不在这里做：**浏览器里没有 TeX 引擎**（预览内核是双端零依赖的，
+   *     它连文件系统都碰不到）。真编译在服务端 —— MCP latex_render_graphic，
+   *     走的是「编译正文」同一套引擎探测链，用户装了什么引擎就用什么。
+   *   · 为什么按 kind+源码 记住结果：同一张图在一个会话里点第二次不该再等两秒；
+   *     服务端那边还按内容 hash 有一层磁盘缓存，两层都不中也只是重编一次。
+   * 失败一律退回原来那张卡（源码一个字都不动），并把原因写在卡上 ——
+   * 静默降级是兜底，不是「装作没发生」。 */
+  const gfxMemo = useRef(new Map());      // "kind\u0000源码" → 服务端结果（会话级）
+  const gfxInFlight = useRef(new Set());  // 同一张图同时只编一次
+  const gfxRunRef = useRef(null);         // 每拍刷新；[] 效果直接闭包会永远拿到首拍（serverId=""）
+
+  /** 当前这份文档的**权威**文本：源码 / 分屏档看受控 textarea，可视化档看 wys 层。
+   *  拿错这一份的代价不只是「导言区旧了一点」—— standalone 图源文件整篇就是待编译的
+   *  文档，文本一旧，编出来的图就跟眼前看到的那份对不上。 */
+  function liveSource() {
+    const ta = taRef.current;
+    if (ta && typeof ta.value === "string") return ta.value;
+    try { return wysBaseSrc(); } catch (e) { return content; }
+  }
+
+  function gfxSetFold(card, folded) {
+    if (folded) card.setAttribute("data-graphic-folded", "1");
+    else card.removeAttribute("data-graphic-folded");
+    const b = card.querySelector("[data-graphic-fold]");
+    if (b) b.textContent = folded ? "▸ 展开源码" : "▾ 收起源码";
+  }
+
+  function gfxShowOk(card, r) {
+    const body = card.querySelector(".pv-graphic-body");
+    const say = card.querySelector(".pv-graphic-say");
+    const st = card.querySelector(".pv-graphic-st");
+    if (body) {
+      body.textContent = "";                       // 清掉上一次的失败说明
+      const img = document.createElement("img");
+      img.setAttribute("class", "pv-graphic-img");
+      img.setAttribute("alt", "绘图环境渲染结果");
+      img.setAttribute("src", r.dataUri);
+      body.appendChild(img);
+    }
+    card.setAttribute("data-graphic-done", "1");
+    gfxSetFold(card, true);                        // 出图了就把源码收起来（要看再点开）
+    const btn = card.querySelector("[data-graphic-render]");
+    if (btn) {
+      btn.removeAttribute("disabled");
+      btn.textContent = "↻ 重新渲染";
+      btn.setAttribute("data-graphic-retry", "1"); // 再点 = 强制重编（绕开两级缓存）
+    }
+    const how = r.cached ? "缓存" : Math.round((r.ms && r.ms.total) || 0) + "ms";
+    if (say) say.textContent = "绘图环境 · 已渲染（" + (r.engine || "本机引擎") + " · " + how + (r.tier === "B" ? " · 简化导言" : "") + "）";
+    if (st) {
+      /* 缺字（多半是中文没排出来）是**最安静的一种错**：编过了、图出来了、只是缺字。
+       * 服务端数过 log 里的 "Missing character"，这里必须说出来。 */
+      st.textContent = r.warn ? "⚠ " + r.warn : "";
+      if (r.warn) st.setAttribute("data-bad", "1"); else st.removeAttribute("data-bad");
+    }
+  }
+
+  function gfxShowFail(card, r) {
+    const st = card.querySelector(".pv-graphic-st");
+    const body = card.querySelector(".pv-graphic-body");
+    const btn = card.querySelector("[data-graphic-render]");
+    const reason = String((r && r.reason) || "渲染失败");
+    card.removeAttribute("data-graphic-done");
+    if (body) body.textContent = "";               // 失败不留半张图
+    if (btn) {
+      btn.removeAttribute("disabled");
+      btn.textContent = "↻ 重试";
+      btn.setAttribute("data-graphic-retry", "1");
+    }
+    if (st) {
+      st.textContent = "⚠ " + (reason.length > 190 ? reason.slice(0, 190) + "…" : reason);
+      st.setAttribute("data-bad", "1");
+      st.setAttribute("title", reason);            // 完整原因挂在提示上
+    }
+    gfxSetFold(card, false);                       // 失败时源码摊开——那是用户最需要看的
+  }
+
+  async function gfxRender(card, force) {
+    const kind = card.getAttribute("data-graphic") || "";
+    const codeEl = card.querySelector(".pv-graphic-code");
+    const code = codeEl ? codeEl.textContent : "";
+    if (!kind || !code) return;
+    const key = kind + "\u0000" + code;
+    const btn = card.querySelector("[data-graphic-render]");
+    const st = card.querySelector(".pv-graphic-st");
+    if (!force) {
+      const hit = gfxMemo.current.get(key);
+      if (hit) { gfxShowOk(card, hit); return; }    // 会话内第二次点：不等，直接出
+    }
+    if (gfxInFlight.current.has(key)) return;       // 连点两下只编一次
+    gfxInFlight.current.add(key);
+    if (btn) btn.setAttribute("disabled", "1");
+    if (st) { st.textContent = "编译中…（本机 TeX 引擎；xelatex 约 1~3 秒，tectonic 首次可能十几秒）"; st.removeAttribute("data-bad"); }
+    try {
+      const out = await callTool("latex_render_graphic", {
+        kind: kind, source: code, doc: liveSource(), path: filePath || "", force: !!force,
+      });
+      let r = null;
+      try { r = JSON.parse(out); } catch (e) { r = null; }
+      if (r && r.ok && r.dataUri) { gfxMemo.current.set(key, r); gfxShowOk(card, r); }
+      else gfxShowFail(card, r || { reason: "服务端返回了看不懂的结果" });
+    } catch (e) {
+      gfxShowFail(card, { reason: String((e && e.message) || e) });
+    } finally {
+      gfxInFlight.current.delete(key);
+      const b2 = card.querySelector("[data-graphic-render]");
+      if (b2) b2.removeAttribute("disabled");
+    }
+  }
+
+  /** 预览整片重画之后，把**已经渲染过**的卡片按会话缓存就地补回图 —— 零编译。
+   *  不做这一步会怎样：渲染出图 → 在别处改一个字 → 预览重画 → 图退回占位卡。
+   *  用户读到的是「点了没用 / 图自己没了」，而缓存明明还在那儿。
+   *  ⚠ 只认 memo 里已经有的结果：绝不因为「这一拍没图了」就去编一张新的 ——
+   *    「绝不每拍都编」这条约束在这一条路上同样成立。 */
+  function gfxRestore(root) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    const cards = root.querySelectorAll(".pv-graphic[data-graphic]:not([data-graphic-done])");
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const codeEl = card.querySelector(".pv-graphic-code");
+      if (!codeEl) continue;
+      const hit = gfxMemo.current.get((card.getAttribute("data-graphic") || "") + "\u0000" + codeEl.textContent);
+      if (hit) gfxShowOk(card, hit);
+    }
+  }
+
+  /* 每拍把当拍闭包挂上去 —— 见 gfxRunRef 的声明。 */
+  gfxRunRef.current = { run: gfxRender, fold: gfxSetFold };
+
+  /* 点按接线：**捕获阶段**挂在根节点上。
+   * 预览层 / 就地编辑层 / 浮层里的卡片全在 rootRef 这一棵树里，一个监听全管住。
+   * 捕获挂在 rootRef（不必挂 window）就够：React 的 onClick 是挂在**容器**上的冒泡监听，
+   * 而 rootRef 是容器的后代 —— 捕获阶段先到 rootRef，我们比它早；stopPropagation 一按，
+   * 它连「这里被点了一下」都收不到（否则会又去抢行跳转）。 */
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof root.addEventListener !== "function") return;
+    function onClick(e) {
+      const t = e && e.target;
+      if (!t || typeof t.closest !== "function") return;
+      const card = t.closest(".pv-graphic");
+      if (!card) return;
+      const cur = gfxRunRef.current;
+      if (!cur) return;
+      if (t.closest("[data-graphic-fold]")) {
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        cur.fold(card, card.getAttribute("data-graphic-folded") !== "1");
+        return;
+      }
+      const btn = t.closest("[data-graphic-render]");
+      if (!btn) return;
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      cur.run(card, btn.getAttribute("data-graphic-retry") === "1");
+    }
+    root.addEventListener("click", onClick, true);
+    return function () { root.removeEventListener("click", onClick, true); };
+  }, []);
 
   /* v0.9.1：子文件加载（latex_asset 的 .tex 文本通道）。
    * - pending 卡（没内容）：立刻取；失败 30s 冷却，不重复打 MCP
@@ -2844,9 +3117,28 @@ export default function LatexEditor(props) {
     loadAssetsIn(root);
     /* v0.9.1：子文件卡片每拍补一次（缓存/冷却在 loadInputsIn 内部把关，不会打爆 MCP） */
     loadInputsIn(root);
+    /* v0.9.12：绘图卡每拍补一次 —— 只补**已经渲染过**的（会话缓存里有才补，零编译） */
+    gfxRestore(root);
   });
 
   /* ---------- 划词引用到 Sidebar ---------- */
+  /* 就地编辑浮层：挂载 / 尺寸变化后按**实测**尺寸摆位。
+   * useLayoutEffect 在 paint 之前跑 —— 首帧就摆好，不会先闪在锚点原处再跳。 */
+  useLayoutEffect(() => {
+    if (!atomEdit) return;
+    fitPopup(popRef.current, { left: atomEdit.x, bottom: atomEdit.ayBottom == null ? atomEdit.y : atomEdit.ayBottom, top: atomEdit.ayTop });
+    /* v0.9.13：浮层里的图也得有人补（.wys-pop 不在 pvRef 那棵树里）—— 见 loadPopAssets。
+     * 依赖带上 serverId：服务还没起来时这一拍补不了（loadAssetsIn 直接返回），
+     * 起来之后必须补上，否则「先开浮层、后起服务」就永久缺那一张图。 */
+    loadPopAssets();
+  }, [atomEdit, serverId]);
+
+  /* 划词引用气泡：同一套摆位（矮窗口下翻到鼠标上方，窄面板里往回收） */
+  useLayoutEffect(() => {
+    if (!quote) return;
+    fitPopup(bubbleRef.current, { left: quote.x, bottom: quote.ay == null ? quote.y : quote.ay, top: quote.ay });
+  }, [quote]);
+
   /* 引用气泡出现期间：点击气泡外 / 按 Esc 关闭 */
   useEffect(() => {
     if (!quote) return;
@@ -2907,7 +3199,7 @@ export default function LatexEditor(props) {
     const text = content.slice(s, en);
     if (!text.trim()) { setQuote(null); return; }
     const pos = clampPos(e.clientX, e.clientY);
-    setQuote({ text: text, lineFrom: lineAt(s), lineTo: lineAt(en), x: pos.x, y: pos.y });
+    setQuote({ text: text, lineFrom: lineAt(s), lineTo: lineAt(en), x: pos.x, y: pos.y, ay: pos.ay });
   }
 
   /* 源码区：键盘划选（shift+方向键）——气泡放在源码面板右上 */
@@ -2919,7 +3211,7 @@ export default function LatexEditor(props) {
     if (!text.trim()) { setQuote(null); return; }
     const rect = ta.getBoundingClientRect();
     const pos = clampPos(rect.right - 200, rect.top + 30);
-    setQuote({ text: text, lineFrom: lineAt(s), lineTo: lineAt(en), x: pos.x, y: pos.y });
+    setQuote({ text: text, lineFrom: lineAt(s), lineTo: lineAt(en), x: pos.x, y: pos.y, ay: pos.ay });
   }
 
   /* 预览区：划选（行号取选区两端最近的 data-line 块锚点） */
@@ -2934,7 +3226,7 @@ export default function LatexEditor(props) {
     const hi = (a != null && b != null) ? Math.max(a, b) : (a != null ? a : b);
     let pos = { x: 100, y: 100 };
     try { pos = clampPos(window.event ? window.event.clientX : 100, window.event ? window.event.clientY : 100); } catch (e) {}
-    setQuote({ text: text, lineFrom: lo, lineTo: hi, x: pos.x, y: pos.y });
+    setQuote({ text: text, lineFrom: lo, lineTo: hi, x: pos.x, y: pos.y, ay: pos.ay });
   }
 
   /* 投递：优先宿主第一方通道（与宿主自家编辑器同一事件 → 侧栏紫色引用卡片），侧栏未开则降级剪贴板 */
@@ -3829,14 +4121,13 @@ export default function LatexEditor(props) {
     if (atomEdit && atomEdit.node === el) return;
     if (atomEdit) commitAtom();
     const r = el.getBoundingClientRect();
-    const W = typeof window === "undefined" ? 1200 : window.innerWidth;
-    const H = typeof window === "undefined" ? 800 : window.innerHeight;
     const host = el.closest ? el.closest(".wys-blk") : null;
+    /* v0.9.11：只记**锚点几何**（左沿 / 上下沿），不在这里猜浮层多大 ——
+     * 摆位交给 fitPopup 按实测尺寸算（见文件上方的注释）。 */
     setAtomEdit({
       mode: "inline", node: el, tex: tex, orig: tex, s: -1, e: -1,
       blkS: host ? host.getAttribute("data-s") : null,
-      x: Math.max(8, Math.min(r.left, W - 556)),
-      y: Math.max(8, Math.min(r.bottom + 6, H - 220)),
+      x: r.left, y: r.bottom + 6, ayTop: r.top, ayBottom: r.bottom,
     });
   }
 
@@ -3861,7 +4152,7 @@ export default function LatexEditor(props) {
       prefix: el.getAttribute("data-prefix"),
       suffix: el.getAttribute("data-suffix"),
       what: el.getAttribute("data-what") || "",
-      x: r.left, y: r.bottom + 6,
+      x: r.left, y: r.bottom + 6, ayTop: r.top, ayBottom: r.bottom,
     };
   }
 
@@ -3882,13 +4173,10 @@ export default function LatexEditor(props) {
     if (atomEdit) commitAtom();                     // 上一处先提交，别丢
     flushTextEdits();                               // 正在打字的正文块也先落地
     pickAtom(el);
-    const W = typeof window === "undefined" ? 1200 : window.innerWidth;
-    const H = typeof window === "undefined" ? 800 : window.innerHeight;
     setAtomEdit({
       mode: "block", key: key, el: el, s: sp.s, e: sp.e, tex: sp.tex, orig: sp.tex,
       prefix: sp.prefix, suffix: sp.suffix, what: sp.what,
-      x: Math.max(8, Math.min(sp.x, W - 556)),
-      y: Math.max(8, Math.min(sp.y, H - 220)),
+      x: sp.x, y: sp.y, ayTop: sp.ayTop, ayBottom: sp.ayBottom,
     });
   }
 
@@ -4117,7 +4405,7 @@ export default function LatexEditor(props) {
           <div ref={menuRef} style={{ position: "relative" }}>
             <button style={tbtn} onClick={() => setMenu(!menu)} title="插入常用结构（右侧标注的快捷键，在源码 / 分屏视图生效）">＋ 插入 {menu ? "▴" : "▾"}</button>
             {menu ? (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 40, minWidth: 224, maxHeight: 430, overflowY: "auto", padding: 4, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--popover))", boxShadow: "0 8px 24px rgba(0,0,0,.25)" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 40, minWidth: 224, maxHeight: "min(430px, 56vh)", overflowY: "auto", padding: 4, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--popover))", boxShadow: "0 8px 24px rgba(0,0,0,.25)" }}>
                 {INSERT_GROUPS.map((g) => {
                   const rows = INSERTS.filter((it) => it[4] === g);
                   if (!rows.length) return null;
@@ -4270,7 +4558,7 @@ export default function LatexEditor(props) {
             className="wys-pop-dim"
             onMouseDown={(ev) => { ev.preventDefault(); commitAtom(); }}
           />
-          <div className="wys-pop" style={{ left: atomEdit.x, top: atomEdit.y }}>
+          <div ref={popRef} className="wys-pop" style={{ left: atomEdit.x, top: atomEdit.y }}>
             <div className="wys-pop-h">
               <b>{atomEdit.mode === "inline" ? "就地编辑引用" : (atomEdit.what ? "就地编辑 · " + atomEdit.what : "就地编辑这一块")}</b>
               <span>{atomEdit.mode === "inline" ? "改完这段立刻生效" : "L" + (atomEdit.s + 1) + (atomEdit.e > atomEdit.s ? "–" + (atomEdit.e + 1) : "")}</span>

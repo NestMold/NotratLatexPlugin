@@ -1,0 +1,29 @@
+# ================================================================
+#  samples/latexmkrc —— 让「编译正文」自动带上 figs/ 下的图
+#
+#  放在主 .tex 同一目录，latexmk 会自动读取（不用改任何命令行）。
+#
+#  用法：
+#      latexmk -xelatex test.tex          # 图源有改动 → 先自动重编图，再编正文
+#      latexmk -xelatex -pvc test.tex     # 监视模式：改正文或改图都会自动重编
+#
+#  原理：latexmk 读 test.fls 得知 test.pdf 依赖 figs/fig-five-dim.pdf，
+#  下面这条自定义依赖告诉它「X.pdf 由 X.tex 生成」—— 于是图源比产物新时
+#  自动重编，产物更新时一步都不多跑（不会每次都白编一遍图）。
+#
+#  注意：这条规则对**任何**被正文 \includegraphics 引入的 `*.pdf + 同名 *.tex`
+#  都生效（不止 fig-five-dim），所以以后新增图只要按同样方式放就行。
+# ================================================================
+add_cus_dep( 'tex', 'pdf', 0, 'build_figure_pdf' );
+
+sub build_figure_pdf {
+    my ($base, $path) = @_;
+    # $base 是不含扩展名的文件名，$path 是所在目录（可能为空 / 带尾斜杠）。
+    my $src = (index($base, '/') >= 0 || index($base, '\\') >= 0)
+            ? $base
+            : (($path || '') . $base);
+    print "=== [latexmkrc] 图形源有改动，先重编：$src.tex ===\n";
+    my $rc = system("latexmk -xelatex -norc -silent -interaction=nonstopmode -halt-on-error -cd \"$src.tex\"");
+    print "=== [latexmkrc] $src.tex 编译" . ($rc == 0 ? "成功" : "失败（rc=$rc）") . " ===\n";
+    return $rc;
+}

@@ -17,7 +17,7 @@ const ws = "E:/notrat-latex-plugin";
 let core = fs.readFileSync(path.join(ws, "server/preview-core.js"), "utf8");
 core = core.replace(
   /^module\.exports\s*=\s*\{[^}]*\};?[^\S\n]*$/m,
-  "const LPC = { renderPreview: renderPreview, miniMath: miniMath };"
+  "const LPC = { renderPreview: renderPreview, miniMath: miniMath, renderInlineHtml: renderInlineHtml };"
 );
 if (!/^const LPC = \{ renderPreview/m.test(core)) { console.error("LPC 改写失败"); process.exit(1); }
 

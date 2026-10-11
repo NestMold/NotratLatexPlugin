@@ -28,7 +28,7 @@ const m = JSON.parse(fs.readFileSync(path.join(ws, "manifest.json"), "utf8"));
 /* ---------- preview-core：末行 CJS 导出 → 内联常量 ---------- */
 core = core.replace(
   /^module\.exports\s*=\s*\{[^}]*\};?[^\S\n]*$/m,
-  "const LPC = { renderPreview: renderPreview, miniMath: miniMath };"
+  "const LPC = { renderPreview: renderPreview, miniMath: miniMath, renderInlineHtml: renderInlineHtml };"
 );
 if (!/^const LPC = \{ renderPreview/m.test(core)) {
   console.error("preview-core 导出语句改写失败（未找到行首的导出语句）");
@@ -161,9 +161,9 @@ try {
 if (!Array.isArray(m.mcpServers)) throw new Error("mcpServers 必须是数组形态（宿主 enable() for...of 会崩）");
 
 const PLUGIN_ID = m.id;
-/* 一个都不能漏：v0.9.0 +pdf-raster；v0.9.4 +tex-encoding；v0.9.6 +engine-install。
+/* 一个都不能漏：v0.9.0 +pdf-raster；v0.9.4 +tex-encoding；v0.9.6 +engine-install；v0.9.12 +graphic-render。
  * 漏一个 → index.js 顶层 require 抛 Cannot find module → server 整体起不来（同一个坑踩过两次）。 */
-const REQUIRED_SERVER_FILES = ["index.js", "contrib.js", "export-html.js", "preview-core.js", "pdf-raster.js", "tex-encoding.js", "engine-install.js"];
+const REQUIRED_SERVER_FILES = ["index.js", "contrib.js", "export-html.js", "preview-core.js", "pdf-raster.js", "tex-encoding.js", "engine-install.js", "graphic-render.js"];
 const PORTABLE_SERVER_ARG = "${pluginDir}/server/index.js";
 
 /** 单文件包的 server 落点 = <插件目录>/<插件 id>/server。纯函数：断言里用假 home 复算。 */

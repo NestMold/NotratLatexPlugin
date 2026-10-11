@@ -7,7 +7,7 @@
 > 让 Notrat 直接打开、编辑、编译 `.tex` 的科研写作插件。  
 > A research-writing LaTeX plugin for the Notrat app: WYSIWYG-style `.tex` editing with outline navigation, compile, and export.
 
-![version](https://img.shields.io/badge/version-0.9.9-blue.svg)  
+![version](https://img.shields.io/badge/version-0.9.13-blue.svg)  
 ![license](https://img.shields.io/badge/license-MIT-green.svg)  
 ![notrat](https://img.shields.io/badge/Notrat-%E2%89%A5%201.3.3-6f42c1.svg)  
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)  
@@ -176,7 +176,7 @@ npm run build      # 产物写盘即热更新，详见 docs/DEVELOPMENT.md
 
 ## MCP 工具
 
-server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助手可直接调用：
+server 侧共 13 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助手可直接调用：
 
 
 | 工具               | 说明                                                                                                                       |
@@ -185,12 +185,15 @@ server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 | `latex_validate` | 校验：重复 label、未定义 `\ref`、`.bib` 缺失 `\cite`、环境配对、TODO 清单                                                                    |
 | `latex_outline`  | 大纲，双通路：面板调用出 list 行协议，宿主内置大纲调用出 `level`、`text`、`anchor` 契约；自动展开 `\input`/`\include` 的子文件章节（anchor 落在父文件那条 `\input` 的行号上） |
 | `latex_compile`  | 编译 PDF（默认 xelatex，设置里可换引擎和超时）                                                                                            |
+| `latex_render_graphic` | 把预览里的绘图环境（TikZ / PGF / PGFPlots）**就地渲染成图片**：本机引擎编一次 + 栅格化成 PNG 回占位卡。绝不往工作区写文件（aux/log/pdf 全在系统临时目录），按内容 hash 缓存（第二次点不起进程）；standalone 图源整篇直编，内联 `tikzpicture` 先按原导言区包装、编不过再退最小导言，并回报用的是哪一级 + 缺字条数 |
 | `latex_status`   | 一行状态摘要（节数、图、表、式、引用、字数、错误数）                                                                                               |
 | `latex_asset`    | 内部资产：KaTeX 离线包、图片转 dataURI（pdf/eps 走本机栅格化）、`.tex` 文件读取                                                                   |
 | `latex_backup`   | 源码快照到 `.latex-history/`（需显式调用；按**字节**存，UTF-16 文件也逐字节无损）                                                                  |
 | `latex_history`  | 快照列表与恢复（恢复前自动另存当前版本；按**字节**原样写回，恢复前后 sha256 一致）                                                                          |
 | `latex_export`   | 导出 PDF / 自包含 HTML，落点可选 same、desktop、downloads、documents                                                                  |
 | `latex_env`      | 引擎自检：探测不编译；`action=reset` 清缓存重探（刚装完引擎时用）                                                                                 |
+| `latex_engine_install` | 一键装 TeX 引擎（Tectonic 单文件，免管理员免配 PATH）；**异步**，立刻返回 jobId                                    |
+| `latex_engine_install_status` | 查一键安装进度 / 中止（服务重启后查不到，面板重新挂载时会再问一次）                                                       |
 
 
 不装插件也能手动跑：
@@ -203,12 +206,12 @@ server 侧共 10 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 
 ```bash
 npm install        # 只依赖 katex（预览公式资源）
-npm run gate       # ★ 验收门 30 层，全绿约 80s，任何一层红了退出非零
+npm run gate       # ★ 验收门 33 层，全绿约 115s，任何一层红了退出非零
 npm run test:core  # 内核单测
 npm run build      # 打单文件包（热更新）
 ```
 
-源码结构、验收门 30 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
+源码结构、验收门 33 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
 
 技术栈：面板是 React（TSX，宿主内联加载），server 是纯 Node 零依赖（MCP stdio），构建用 esbuild，测试全部离线可跑（jsdom 做真 DOM 往返）。
 
@@ -256,7 +259,7 @@ npm run build      # 打单文件包（热更新）
 欢迎 Issue 和 PR：
 
 - **真实 `.tex` 语料**是最缺的——合成语料覆盖想得到的边界，真实论文才覆盖想不到的（详见 [docs/v0.9-status.md](docs/v0.9-status.md)「语料」一节）。欢迎投递可公开的论文源码（脱敏后）；
-- 改代码前先跑 `npm run gate`，PR 请保证 30 层全绿；
+- 改代码前先跑 `npm run gate`，PR 请保证 33 层全绿；
 - 提 Issue 请附最小复现 `.tex` 与 Notrat 版本号。
 
 ## 许可证

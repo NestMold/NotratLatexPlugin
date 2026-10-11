@@ -46,6 +46,24 @@
  *                            —— 空落脚行上放零宽占位（<br> 之后没有节点时 Chromium 算不出
  *                            光标几何，rect = 0,0,0,0）；Ctrl+A 由插件自己接管（0.8.29 加，
  *                            真浏览器复验可选：NOTRAT_CARET_BROWSER=1）
+ *   [31] 标题里的字体声明 : 「\bfseries … \\[5pt] \large …」这类显示不对 —— 声明被静默吃掉、
+ *                            \\ 的可选间距当正文漏出来（"[5pt]"）、就地编辑层的页首还把整行
+ *                            当源码摊着。两条一起修：声明按组作用域生效、参数类命令一律只吞参数，
+ *                            且页首改走**同一个**行内内核（v0.9.10 加）
+ *   [32] 绘图环境 / 浮层摆位: 「这一些有问题，并且这些弹窗无法自适应位置」——
+ *                            TikZ 的 \begin{tikzpicture}[…] 与 \node[…] / \draw[…]
+ *                            被当**正文**排，选项与坐标漏成一地散文；就地编辑浮层与
+ *                            划词气泡的位置是拿写死的 556×220 / 190×56 钳的，量都不量。
+ *                            两条一起修：绘图环境出占位卡（源码原样收着、漏 \end 也不吃
+ *                            正文），浮层改按 offsetWidth/offsetHeight 实量后翻上方 / 钳视口
+ *                            （v0.9.11 加）
+ *   [33] 浮层里的图没人补   : 「点击就地编辑的时候无法对上」—— 浮层位置与块都对，
+ *                            唯独图没了，那个位置上只剩一行文件名。内核发出的插图标签
+ *                            只有 data-asset、**没有 src**（浏览器于是显示 alt 文本），
+ *                            而「每拍补一次图」只喂了 pvRef —— .wys-pop 是它的**兄弟
+ *                            节点**，浮层这一棵从来没人补。三条一起修：loadAssetsIn 收
+ *                            done（聚合）、新增 loadPopAssets 走同一条通道、摆位 effect
+ *                            每拍调它并在图到货 / 解码后重摆（v0.9.13 加）
  *
  * 为什么要第 [1] 层：0.7.0 线上出过
  *   ReferenceError: Cannot access 'renderMath' before initialization
@@ -88,6 +106,9 @@ const steps = [
   { name: "多文件大纲 + 编码嗅探：\\input 展开 / UTF-16 / 循环引用（v094-outline-multifile.js）", file: ".setup/check/v094-outline-multifile.js" },
   { name: "快照字节级：.latex-history 的 UTF-16 快照 / 恢复逐字节无损（v094-history-bytes.js）", file: ".setup/check/v094-history-bytes.js" },
   { name: "引擎一键安装：平台资产表 / 解压 / 拒绝覆盖 / 工具契约（v096-engine-install.js）", file: ".setup/check/v096-engine-install.js" },
+  { name: "标题里的字体声明：\\[5pt] 的参数不落正文 / 声明按组生效 / 页首走同一内核（v0910-title-inline.js）", file: ".setup/check/v0910-title-inline.js" },
+  { name: "绘图环境 / 浮层摆位：TikZ 不当正文排 / 漏 \\end 不吃正文 / 浮层按实测尺寸自适应（v0911-tikz-popup.js）", file: ".setup/check/v0911-tikz-popup.js" },
+  { name: "浮层里的图没人补：缓存命中零 MCP / 到货补 src 并回调重摆位 / 降级也回调（v0913-pop-assets.js）", file: ".setup/check/v0913-pop-assets.js" },
 ];
 
 let failed = 0;

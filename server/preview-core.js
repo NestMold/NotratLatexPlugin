@@ -137,13 +137,78 @@ function miniMath(tex, display) {
   return '<span class="pv-mini' + (display ? " pv-mini-d" : "") + '">' + s + "</span>";
 }
 
+/* ---------- 字体声明（\bfseries / \itshape / \large …） ----------
+ * v0.9.10：用户在 \title 里写的「\bfseries 主标题 \\[5pt] \large 副标题」——
+ * 以前这些**声明**全被静默吃掉（一个字都不生效），而 \\ 的可选间距还会当正文漏出来。
+ * TeX 里声明的作用范围到**当前组结束**，所以状态跟着递归往下传：子组继承父组，
+ * 子组里改回来不影响父组（{\bfseries 粗} 之后照旧是细的）。
+ * 字号按比例算：LaTeX 的档位是相对 \normalsize 的比例，而标题块自己的基准是 \LARGE ——
+ * 不除基准的话，标题里的 \large 会比标题本身还大（1.2em > 22px 的标题，越改越离谱）。 */
+const PVC_FONT_SIZE = { tiny: 0.5, scriptsize: 0.7, footnotesize: 0.8, small: 0.9, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.488 };
+/* article.cls 的 \maketitle：标题 \LARGE、作者与日期 \large —— 写死成基准，不做文档类推断 */
+const PVC_SIZE_BASE = { body: 1, title: 1.728, sub: 1.2 };
+const PVC_DECL = {
+  bfseries: { w: "700" }, mdseries: { w: "" },
+  itshape: { s: "italic" }, slshape: { s: "oblique" }, upshape: { s: "" },
+  sffamily: { f: "sans-serif" }, ttfamily: { f: "monospace" }, rmfamily: { f: "" },
+  tiny: { z: "tiny" }, scriptsize: { z: "scriptsize" }, footnotesize: { z: "footnotesize" },
+  small: { z: "small" }, normalsize: { z: "normalsize" }, large: { z: "large" }, Large: { z: "Large" },
+  LARGE: { z: "LARGE" }, huge: { z: "huge" }, Huge: { z: "Huge" },
+};
+/* 空值 = 复位（\upshape 取消 \itshape）。
+ * zAbs 是 \fontsize{12pt}{..}\selectfont 那种**绝对**字号（CSS 量纲同名，直接写死）；
+ * 它压过档位比例 —— TeX 里 \fontsize 本来就不看 \normalsize 的档位。 */
+function pvcDeclCss(d, ctx) {
+  if (!d) return "";
+  const out = [];
+  if (d.w) out.push("font-weight:" + d.w);
+  if (d.s) out.push("font-style:" + d.s);
+  if (d.f) out.push("font-family:" + d.f);
+  if (d.zAbs) out.push("font-size:" + d.zAbs);
+  else if (d.z) {
+    const base = (ctx && ctx.sizeBase) || 1;
+    const ratio = PVC_FONT_SIZE[d.z] != null ? PVC_FONT_SIZE[d.z] / base : 0;
+    /* 与基准相差不到 1% 就不写 font-size —— 少一层没用的 span，内联编辑层也不容易被撑乱 */
+    if (ratio && Math.abs(ratio - 1) > 0.012) out.push("font-size:" + (Math.round(ratio * 100) / 100) + "em");
+  }
+  return out.join(";");
+}
+
+/* ---------- 盒子 / 缩放类宏的参数形状（v0.9.11） ----------
+ * 这一类宏的参数是**尺寸**，真正的内容永远在最后一个组里。旧版把它们当未知命令：
+ * 命令名被吞、参数漏成正文 —— \resizebox{\textwidth}{!}{…} 就在图上漏出一个孤零零的
+ * "!"（用户报的那条消息开头那个 "!" 就是它）。
+ * "o" = 可选 [..]，"g" = 必填 {..}；表里列的是**内容之前的**参数，末位之后才是内容。 */
+const BOX_ARG_SHAPE = {
+  resizebox: ["g", "g"], "resizebox*": ["g", "g"],
+  scalebox: ["g"], "scalebox*": ["g"],
+  reflectbox: [], rotatebox: ["o", "g"], adjustbox: ["o", "g"],
+  makebox: ["o", "o"], framebox: ["o", "o"], parbox: ["o", "o", "o", "g"],
+  hbox: [], vbox: [], phantom: [], hphantom: [], vphantom: [],
+};
+/* \phantom 那一族占位但不显示 —— 内容渲染出来就错了 */
+const BOX_INVISIBLE = { phantom: 1, hphantom: 1, vphantom: 1 };
+
 /* ---------- 行内渲染 ---------- */
 const ESC_MAP = { "%": "%", "&": "&amp;", "_": "_", "$": "$", "#": "#", "{": "{", "}": "}", "^": "^", "~": "~" };
 
-function inline(s, ctx) {
+function inline(s, ctx, st) {
   let out = "";
   let i = 0;
   const n = s.length;
+  /* v0.9.10：声明式字体命令的作用域（见文件上方 PVC_DECL）。
+   * st 是父组传下来的声明；本层自己开出去的 span 由本层收尾，绝不跨层闭合。 */
+  const declBase = pvcDeclCss(st, ctx);
+  let decl = st || null;
+  let declOpen = null;
+  function setDecl(patch) {
+    const d = Object.assign({}, decl || {});
+    for (const k in patch) { if (patch[k]) d[k] = patch[k]; else delete d[k]; }
+    decl = Object.keys(d).length ? d : null;
+    const css = pvcDeclCss(decl, ctx);
+    if (declOpen) { out += "</span>"; declOpen = null; }
+    if (css && css !== declBase) { out += '<span style="' + css + '">'; declOpen = css; }
+  }
   while (i < n) {
     const c = s[i];
     if (c === "\\") {
@@ -160,20 +225,71 @@ function inline(s, ctx) {
           if ((ctx.__macDepth || 0) >= 24) continue;
           const macExp = mac.body.replace(/#(\d)/g, function (mm, d) { return macArgs[d - 1] != null ? macArgs[d - 1] : ""; });
           ctx.__macDepth = (ctx.__macDepth || 0) + 1;
-          try { out += inline(macExp, ctx); } finally { ctx.__macDepth--; }
+          try { out += inline(macExp, ctx, decl); } finally { ctx.__macDepth--; }
+          continue;
+        }
+        /* 声明式字体命令（\bfseries / \itshape / \large / \sffamily …）：不产字，只改后续作用域 */
+        if (PVC_DECL[cmd]) { setDecl(PVC_DECL[cmd]); continue; }
+        if (cmd === "normalfont") { setDecl({ w: "", s: "", f: "", z: "" }); continue; }
+        if (cmd === "em") { setDecl({ s: decl && decl.s === "italic" ? "" : "italic" }); continue; }
+        /* \fontsize{12pt}{14pt}\selectfont：第一个参数是字号，第二个是行距（行距这里不管）。
+         * 量纲只认 CSS 也认的那几个；认不出来（宏 / 相对量）就只吞参数、不动字号。 */
+        if (cmd === "fontsize") {
+          const g1 = argAt(s, i);
+          const g2 = argAt(s, g1.next);
+          i = g2.next;
+          const fm = /^\s*(\d+(?:\.\d+)?)\s*(pt|px|mm|cm|in|em|ex|rem|%)?\s*$/.exec(g1.body);
+          if (fm) setDecl({ z: "", zAbs: fm[1] + (fm[2] || "pt") });
+          continue;
+        }
+        /* 间距 / 尺寸类：只吃参数，绝不把 "3mm" 当正文漏出来（与 \\[5pt] 同一类）。
+         * 只收「参数就是全部内容」的命令 —— \parbox{宽}{文字} 那种第二参数是内容的不能收。 */
+        if (cmd === "vspace" || cmd === "hspace" || cmd === "vskip" || cmd === "hskip" ||
+            cmd === "setlength" || cmd === "addtolength" || cmd === "rule") {
+          const nArg = (cmd === "setlength" || cmd === "addtolength" || cmd === "rule") ? 2 : 1;
+          const o3 = optArg(s, skipSpaces(s, i));
+          if (o3.next > i) i = o3.next;   /* \rule[raise]{..}{..} 的抬升量 */
+          for (let k = 0; k < nArg; k++) { const a2 = argAt(s, i); i = a2.next; }
+          continue;
+        }
+        if (cmd === "noindent" || cmd === "ignorespaces" || cmd === "unskip" || cmd === "relax" ||
+            cmd === "protect" || cmd === "linebreak" || cmd === "nolinebreak" ||
+            cmd === "pagebreak" || cmd === "nopagebreak" || cmd === "allowbreak") {
+          const o2 = optArg(s, skipSpaces(s, i));
+          if (o2.next > i) i = o2.next;   /* [4] 这种强度参数一样只是参数 */
           continue;
         }
         switch (cmd) {
-          case "textbf": { const g = argAt(s, i); i = g.next; out += "<strong>" + inline(g.body, ctx) + "</strong>"; break; }
-          case "textit": case "emph": case "textsl": case "textup": { const g = argAt(s, i); i = g.next; out += "<em>" + inline(g.body, ctx) + "</em>"; break; }
-          case "texttt": { const g = argAt(s, i); i = g.next; out += '<code class="pv-tt">' + inline(g.body, ctx) + "</code>"; break; }
-          case "underline": case "uline": { const g = argAt(s, i); i = g.next; out += "<u>" + inline(g.body, ctx) + "</u>"; break; }
-          case "mbox": case "text": { const g = argAt(s, i); i = g.next; out += inline(g.body, ctx); break; }
+          case "textbf": { const g = argAt(s, i); i = g.next; out += "<strong>" + inline(g.body, ctx, decl) + "</strong>"; break; }
+          case "textit": case "emph": case "textsl": case "textup": { const g = argAt(s, i); i = g.next; out += "<em>" + inline(g.body, ctx, decl) + "</em>"; break; }
+          case "texttt": { const g = argAt(s, i); i = g.next; out += '<code class="pv-tt">' + inline(g.body, ctx, decl) + "</code>"; break; }
+          case "underline": case "uline": { const g = argAt(s, i); i = g.next; out += "<u>" + inline(g.body, ctx, decl) + "</u>"; break; }
+          case "mbox": case "text": { const g = argAt(s, i); i = g.next; out += inline(g.body, ctx, decl); break; }
+          /* v0.9.11：盒子 / 缩放类宏 —— 参数不是正文，只有最后一个组是。
+           * 认不出来时（形状不对）只吞掉已经读到的参数，绝不乱吐。 */
+          case "resizebox": case "resizebox*": case "scalebox": case "scalebox*":
+          case "reflectbox": case "rotatebox": case "adjustbox":
+          case "makebox": case "framebox": case "parbox":
+          case "hbox": case "vbox": case "phantom": case "hphantom": case "vphantom": {
+            const shape = BOX_ARG_SHAPE[cmd] || [];
+            let ii = i;
+            for (let n2 = 0; n2 < shape.length; n2++) {
+              ii = skipSpaces(s, ii);
+              if (shape[n2] === "o") { const o = optArg(s, ii); if (o.next > ii) ii = o.next; continue; }
+              if (s[ii] === "{") { const g2 = readGroup(s, ii); ii = g2.next; } else break;
+            }
+            ii = skipSpaces(s, ii);
+            let body2 = null;
+            if (s[ii] === "{") { const g2 = readGroup(s, ii); body2 = g2.body; ii = g2.next; }
+            i = ii;
+            if (body2 != null && !BOX_INVISIBLE[cmd]) out += inline(body2, ctx, decl);
+            break;
+          }
           case "ref": case "autoref": case "vref": case "pageref": { const g = argAt(s, i); i = g.next; out += ctx.ref(g.body, false); break; }
           case "eqref": { const g = argAt(s, i); i = g.next; out += ctx.ref(g.body, true); break; }
           case "cite": case "citep": case "citet": case "citealp": { const g = argAt(s, i); i = g.next; out += ctx.cite(g.body); break; }
           case "label": { const g = argAt(s, i); i = g.next; break; }
-          case "footnote": { const g = argAt(s, i); i = g.next; out += ' <sup class="pv-fn">注: ' + inline(g.body, ctx) + "</sup>"; break; }
+          case "footnote": { const g = argAt(s, i); i = g.next; out += ' <sup class="pv-fn">注: ' + inline(g.body, ctx, decl) + "</sup>"; break; }
           case "item": { const g = optArg(s, i); i = g.next; break; }
           case "newline": case "cr": out += "<br/>"; break;
           case "nbsp": out += "&nbsp;"; break;
@@ -185,20 +301,20 @@ function inline(s, ctx) {
           case "minitoc": case "parttoc": case "secttoc": case "doparttoc": case "dominitoc": case "dosecttoc":
           case "tableofcontents": case "faketableofcontents": case "listoffigures": case "listoftables": { const g = argAt(s, i); i = g.next; break; }
           /* v0.9.3：正文常见命令补齐 */
-          case "textsc": { const g = argAt(s, i); i = g.next; out += '<span class="pv-sc">' + inline(g.body, ctx) + "</span>"; break; }
-          case "url": { const g = argAt(s, i); i = g.next; const u = g.body.trim(); out += '<a class="pv-url" href="' + pvcEscAttr(/^[a-z]+:/i.test(u) ? u : "https://" + u) + '" target="_blank" rel="noreferrer">' + inline(g.body, ctx) + "</a>"; break; }
-          case "href": { const g1 = argAt(s, i); const g2 = argAt(s, g1.next); i = g2.next; const u = g1.body.trim(); out += '<a class="pv-url" href="' + pvcEscAttr(/^[a-z]+:/i.test(u) ? u : "https://" + u) + '" target="_blank" rel="noreferrer">' + inline(g2.body, ctx) + "</a>"; break; }
+          case "textsc": { const g = argAt(s, i); i = g.next; out += '<span class="pv-sc">' + inline(g.body, ctx, decl) + "</span>"; break; }
+          case "url": { const g = argAt(s, i); i = g.next; const u = g.body.trim(); out += '<a class="pv-url" href="' + pvcEscAttr(/^[a-z]+:/i.test(u) ? u : "https://" + u) + '" target="_blank" rel="noreferrer">' + inline(g.body, ctx, decl) + "</a>"; break; }
+          case "href": { const g1 = argAt(s, i); const g2 = argAt(s, g1.next); i = g2.next; const u = g1.body.trim(); out += '<a class="pv-url" href="' + pvcEscAttr(/^[a-z]+:/i.test(u) ? u : "https://" + u) + '" target="_blank" rel="noreferrer">' + inline(g2.body, ctx, decl) + "</a>"; break; }
           /* \color{..}：作用域颜色做不便宜，只吞参数 —— 否则 \todo 展开会把 "red" 当正文漏出来 */
           case "color": { const g = argAt(s, i); i = g.next; break; }
-          case "textcolor": { const c1 = argAt(s, i); const g = argAt(s, c1.next); i = g.next; const col = pvcSafeColor(c1.body); out += col ? '<span style="color:' + col + '">' + inline(g.body, ctx) + "</span>" : inline(g.body, ctx); break; }
-          case "marginpar": { const g = argAt(s, i); i = g.next; out += '<span class="pv-marg">📌 ' + inline(g.body, ctx) + "</span>"; break; }
+          case "textcolor": { const c1 = argAt(s, i); const g = argAt(s, c1.next); i = g.next; const col = pvcSafeColor(c1.body); out += col ? '<span style="color:' + col + '">' + inline(g.body, ctx, decl) + "</span>" : inline(g.body, ctx, decl); break; }
+          case "marginpar": { const g = argAt(s, i); i = g.next; out += '<span class="pv-marg">📌 ' + inline(g.body, ctx, decl) + "</span>"; break; }
           /* ICLR/ACL 式多作者排版：\AND 分块换行，\And{名字} 一块 */
           case "AND": out += "<br/>"; break;
-          case "And": { const g = argAt(s, i); i = g.next; out += inline(g.body, ctx) + "<br/>"; break; }
+          case "And": { const g = argAt(s, i); i = g.next; out += inline(g.body, ctx, decl) + "<br/>"; break; }
           default: {
             if (SYM[cmd] != null) { out += SYM[cmd]; break; }
             let j = skipSpaces(s, i);
-            if (s[j] === "{") { const g = readGroup(s, j); out += inline(g.body, ctx); i = g.next; }
+            if (s[j] === "{") { const g = readGroup(s, j); out += inline(g.body, ctx, decl); i = g.next; }
             else if (s[j] === "[") { const o = optArg(s, j); i = o.next; }
             /* v0.9.1: unknown commands no longer leak their name as literal text
              * (\doparttoc used to render as "doparttoc"); degrade silently like TeX would. */
@@ -208,7 +324,13 @@ function inline(s, ctx) {
         continue;
       }
       const ch = s[i + 1];
-      if (ch === "\\") { out += "<br/>"; i += 2; continue; }
+      if (ch === "\\") {
+        /* v0.9.10：\\[5pt] 的垂直间距是**参数**，不是正文 —— 以前那个 "[5pt]" 会原样漏进预览 */
+        let j = i + 2;
+        if (s[j] !== "[") { const k2 = skipSpaces(s, j); if (s[k2] === "[") j = k2; }
+        if (s[j] === "[") j = optArg(s, j).next;
+        out += "<br/>"; i = j; continue;
+      }
       if (ch && ESC_MAP[ch] != null) { out += ESC_MAP[ch]; i += 2; continue; }
       if (ch && "!,;: ".indexOf(ch) >= 0) { i += 2; continue; }
       out += ch; i += 1; continue;
@@ -223,7 +345,7 @@ function inline(s, ctx) {
       out += "$"; i++; continue;
     }
     if (c === "~") { out += "&nbsp;"; i++; continue; }
-    if (c === "{") { const g = readGroup(s, i); out += inline(g.body, ctx); i = g.next; continue; }
+    if (c === "{") { const g = readGroup(s, i); out += inline(g.body, ctx, decl); i = g.next; continue; }
     if (c === "}") { i++; continue; }
     if (c === "%") { i++; continue; }
     if (c === "-" && s[i + 1] === "-" && s[i + 2] === "-") { out += "—"; i += 3; continue; }
@@ -237,6 +359,7 @@ function inline(s, ctx) {
     if (c === ">") { out += "&gt;"; i++; continue; }
     out += c; i++;
   }
+  if (declOpen) out += "</span>";
   return out;
 }
 
@@ -617,6 +740,16 @@ function parseBlocks(body, lineOff, ctx) {
       const name = m[1];
       const beginIdx = pos + m[0].length;
       const endM = findEnvEnd(body, beginIdx, name);
+      /* v0.9.11：绘图环境漏了 \end 时，只吞掉 \begin{…}[选项] 本身 ——
+       * 旧写法 endM<0 会把 endIdx 顶到 body.length，一个手抖就让**后半篇正文全部消失**
+       * （而且是在「本来就没渲染出来」的图上再赔上正文）。宁可少画一张卡，不许吃正文。 */
+      if (endM < 0 && GRAPHIC_ENVS[name]) {
+        let gi = skipSpaces(body, beginIdx);
+        const oo = optArg(body, gi);
+        pos = oo.next > gi ? oo.next : beginIdx;
+        out += renderGraphicEnv(name, "", atLine, ctx);
+        continue;
+      }
       const endIdx = endM < 0 ? body.length : endM;
       const inner = body.slice(beginIdx, endIdx);
       out += renderEnv(name, inner, atLine, ctx);
@@ -664,6 +797,33 @@ function parseBlocks(body, lineOff, ctx) {
       pos = i;
       continue;
     }
+    /* v0.9.11：TikZ 基本语句 —— 不在 \begin{tikzpicture} 里也会出现（片段粘贴、漏了 \end）。
+     * 旧版走「未知命令」那条：名字被吞、[arr] 与 (task) – (loop); 漏成正文。这里整条语句
+     * 吞到下一个 ';'（TikZ 的语句分隔符）为止 —— 画图指令产不出正文，一个字都不该漏。
+     * 认之前先跳过前导空白：**环境一结束 pos 落在换行上**，钉死 ^\\node 这类判定会全部落空
+     * （这就是「只在文件第一行才生效」的老毛病）。三道闸拦住误吞：分号离得太远（>600 字符）、
+     * 中间跨了空行（那是段落边界）、或语句里还有别的 \命令 —— 命中任一条就只吞命令 + [选项]，
+     * 剩下的交回正文那条路。宁可少吞一句，绝不吃掉一段正文。 */
+    {
+      let j0 = pos;
+      while (j0 < n && (body[j0] === " " || body[j0] === "\t" || body[j0] === "\n" || body[j0] === "\r")) j0++;
+      const m2 = /^\\(node|draw|path|fill|filldraw|shade|shadedraw|clip|coordinate|useasboundingbox|foreach|matrix|graph|addplot|legend|tikzset|tikzstyle|pgfmathsetmacro|pgfmathparse|pgfplotset)\b/.exec(body.slice(j0));
+      if (m2) {
+        let i = j0 + m2[0].length;
+        for (;;) {
+          const k2 = skipSpaces(body, i);
+          if (body[k2] === "[") { const o = optArg(body, k2); if (o.next > k2) { i = o.next; continue; } }
+          break;
+        }
+        let semi = body.indexOf(";", i);
+        if (semi >= 0) {
+          const seg = body.slice(i, semi);
+          if (seg.length > 600 || /\n[ \t]*\n/.test(seg) || /\\[a-zA-Z]/.test(seg)) semi = -1;
+        }
+        pos = semi >= 0 ? semi + 1 : i;
+        continue;
+      }
+    }
     if ((m = /^\\(label|hline|rule|vspace\*?|hspace\*?|setlength|renewcommand|newcommand|providecommand|usepackage|documentclass|item)\b/.exec(rest))) {
       let i = pos + m[0].length;
       const o = optArg(body, i); i = o.next > i ? o.next : i;
@@ -679,12 +839,71 @@ function parseBlocks(body, lineOff, ctx) {
   return out;
 }
 
+/* ---------- 绘图环境（TikZ / PGF / PGFPlots / Asymptote / PSTricks …） ----------
+ * v0.9.11：用户原话「这一些有问题」—— 一张 \begin{tikzpicture}[ box/.style={…} ] …
+ * \node[…] / \draw[…] \end{tikzpicture} 的图，在预览里被摊成了一地散文：
+ *   「[ font=, box/.style=draw=black!55, … ]  (task) at (0, 0) 用户任务; (loop) at (2.」
+ * 成因是 renderEnv 走到默认分支：整段交给 parseBlocks 当**正文**排。而 v0.9.1 起
+ * 未知命令不再吐名字，于是 \node / \draw / \path 的名字被吞掉、只剩它们的花括号与
+ * 方括号参数漏成文本 —— 一半丢掉一半留下，读起来就是乱码。
+ *
+ * 这一层不是「把 TikZ 渲染出来」（那要真编译，浏览器里做不到），而是：
+ * 认得出它，给一张**占位卡**（是什么、多少行），后面挂一段**原样**的源码预览。
+ * 宁可说「这里是一张图，预览渲染不了」，也绝不把图形代码当正文排 —— 那是伪造内容。 */
+const GRAPHIC_ENVS = {
+  tikzpicture: "TikZ", pgfpicture: "PGF", tikzcd: "tikz-cd",
+  scope: "TikZ", pgfonlayer: "PGF", pin: "TikZ",
+  axis: "PGFPlots", semilogxaxis: "PGFPlots", semilogyaxis: "PGFPlots",
+  loglogaxis: "PGFPlots", polaraxis: "PGFPlots",
+  asy: "Asymptote", pspicture: "PSTricks", picture: "picture",
+  circuitikz: "circuitikz", forest: "forest", prooftree: "prooftree",
+};
+
+/* v0.9.12：哪些绘图环境**能独立成篇**（从 \begin 到 \end 本身就是一张完整画面）。
+ * 只有这些才挂「渲染这张图」按钮 —— scope / pgfonlayer / pin 是 tikzpicture 的片段，
+ * 单独编必然报错；asy / pspicture 是 Asymptote / PSTricks，xelatex 编不动。
+ * ⚠ 这份表必须与 server/graphic-render.js 的 RENDERABLE 一致：
+ *   面板发的 kind 服务端也要认，两边对不上就是「点了没反应」。 */
+const GRAPHIC_RENDERABLE = {
+  tikzpicture: 1, pgfpicture: 1, tikzcd: 1, circuitikz: 1, forest: 1, picture: 1,
+  axis: 1, semilogxaxis: 1, semilogyaxis: 1, loglogaxis: 1, polaraxis: 1,
+};
+
+/* 占位卡。源码原样进 <pre>（escHtml，一个字都不改），只露出前几行 —— 想改点开就地编辑器。 */
+function renderGraphicEnv(name, inner, line, ctx) {
+  const label = GRAPHIC_ENVS[name] || "绘图";
+  const body = String(inner == null ? "" : inner).replace(/^\s*\n/, "").replace(/\s+$/, "");
+  const rows = body ? body.split("\n").length : 0;
+  /* v0.9.12：能不能就地渲染，只取决于「这个环境能不能独立成篇」。
+   * 按钮与折叠都是**纯 HTML + data 属性**，逻辑在面板里 —— preview-core 是双端零依赖内核，
+   * 不许在这儿碰进程 / 文件系统（真编译在服务端，浏览器侧本来也编不了）。
+   * 没人接手时（导出 HTML / 单测）它就是几个静态标签，不假装能点。 */
+  const canRender = !!GRAPHIC_RENDERABLE[name] && !!body;
+  const showBtns = canRender && !(ctx && ctx.graphicButtons === false);
+  return '<div class="pv-graphic" data-line="' + line + '" data-graphic="' + escHtml(name) + '">' +
+    '<div class="pv-graphic-h"><span class="pv-graphic-badge">' + escHtml(label) + "</span>" +
+    '<span class="pv-graphic-say">绘图环境 · ' + rows + " 行 —— 预览不渲染" +
+    (showBtns ? "；点右边一下就地编译出图" : "，编译 PDF 后可见") + "</span>" +
+    (showBtns
+      ? '<button class="pv-graphic-btn" type="button" data-graphic-render="1" data-act="1" contenteditable="false" ' +
+        'title="用本机 TeX 引擎把这张图编一次（几秒，失败就退回这张卡）；不写工作区文件，只编这一个环境">🖼 渲染这张图</button>' +
+        '<button class="pv-graphic-fold" type="button" data-graphic-fold="1" data-act="1" contenteditable="false" title="收起 / 展开源码">▾ 收起源码</button>' +
+        '<span class="pv-graphic-st"></span>'
+      : "") +
+    "</div>" +
+    (showBtns ? '<div class="pv-graphic-body"></div>' : "") +
+    (body ? '<pre class="pv-graphic-code">' + escHtml(body) + "</pre>" : "") +
+    "</div>";
+}
+
 function renderEnv(name, inner, line, ctx) {
   if (MATH_ENVS[name]) return renderMathEnv(name, inner, line, ctx);
   if (name === "itemize" || name === "enumerate" || name === "description") return renderList(name, inner, line, ctx);
   if (name === "tabular" || name === "tabularx" || name === "longtable") return parseTable(inner, line, ctx);
   if (name === "verbatim" || name === "literal" || name === "lstlisting" || name === "minted")
     return '<pre class="pv-code" data-line="' + line + '">' + escHtml(inner) + "</pre>";
+  /* v0.9.11：绘图环境先于一切 —— 它的内容不是正文，是画图的指令 */
+  if (GRAPHIC_ENVS[name]) return renderGraphicEnv(name, inner, line, ctx);
   if (name === "quote" || name === "quotation")
     return '<blockquote class="pv-quote" data-line="' + line + '">' + parseBlocks(inner, line + 1, ctx) + "</blockquote>";
   if (name === "center")
@@ -715,6 +934,9 @@ function makeCtx(renderMathFn, struct, opts) {
      * incStack = expanding-file stack (cycle & depth guard). */
     inputResolver: (opts && opts.inputResolver) || null,
     incStack: [],
+    /* v0.9.12：绘图卡上的「渲染这张图」按钮要不要出。导出 HTML / 单测传 false ——
+     * 那些语境里没人接这个点击，发一个点不动的按钮出去就是骗人。 */
+    graphicButtons: !(opts && opts.graphicButtons === false),
     ref: function (keyRaw, eqref) {
       const k = String(keyRaw || "").trim();
       const L = this.labels.get(k);
@@ -796,13 +1018,29 @@ function renderPreview(source, opts) {
   ctx.macros = pvcCollectMacros(clean, opts.inputResolver || null, opts.baseDir || "");
   let html = "";
   if (opts.docHeader !== false && title) {
-    html += '<div class="pv-title"><div class="pv-title-main">' + inline(title.body, ctx) + "</div>";
-    if (author) html += '<div class="pv-author">' + inline(author.body, ctx) + "</div>";
-    if (dateCmd) html += '<div class="pv-date">' + inline(dateCmd.body, ctx) + "</div>";
+    /* v0.9.10：页首的基准字号是 \LARGE（标题）/ \large（作者与日期）——
+     * 这样 \title 里的 \large 才是「比标题小一号」，而不是把标题撑得更大 */
+    const tctx = Object.assign({}, ctx, { sizeBase: PVC_SIZE_BASE.title });
+    const actx = Object.assign({}, ctx, { sizeBase: PVC_SIZE_BASE.sub });
+    html += '<div class="pv-title"><div class="pv-title-main">' + inline(title.body, tctx) + "</div>";
+    if (author) html += '<div class="pv-author">' + inline(author.body, actx) + "</div>";
+    if (dateCmd) html += '<div class="pv-date">' + inline(dateCmd.body, actx) + "</div>";
     html += "</div>";
   }
   html += parseBlocks(body, lineOff, ctx);
   return { html: html };
 }
 
-module.exports = { renderPreview, miniMath, stripLineComment };
+/* ---------- 行内文本 → HTML（v0.9.10，供就地编辑层的页首调用） ----------
+ * 就地编辑层与只读预览必须走**同一套**行内解析：各自实现一次，就会出现
+ * 「一边显示 \bfseries 源码、另一边已经加粗了」这种对不上的事（0.7.3 的标题字号漂移同因）。
+ * 页首里没有 \label / \cite 的语境，给两张空表即可。 */
+function renderInlineHtml(text, opts) {
+  opts = opts || {};
+  const ctx = makeCtx(opts.renderMath, { labels: new Map(), bib: new Map() }, opts);
+  if (opts.sizeBase) ctx.sizeBase = opts.sizeBase;
+  if (opts.macros) ctx.macros = opts.macros;
+  return inline(String(text == null ? "" : text), ctx);
+}
+
+module.exports = { renderPreview, miniMath, stripLineComment, renderInlineHtml };

@@ -1,0 +1,68 @@
+% !TEX program = xelatex
+% !TEX encoding = UTF-8
+% ================================================================
+%  fig-five-dim.tex —— Harness 五维结构示意图（独立图源）
+%
+%  由 samples/test.tex 抽出：原来内联在 figure 环境里，现在用 standalone
+%  单独成篇编译成 fig-five-dim.pdf，正文用 \includegraphics 引入。
+%  这么做的收益：预览里能看到**真图**（走服务端 pdf-raster 栅格化，
+%  本机有 pdftoppm / Ghostscript 即可），不再是「绘图环境占位卡」。
+%
+%  ⚠ 正文引入时必须写全扩展名：
+%        \includegraphics[...]{figs/fig-five-dim.pdf}   ← 对
+%        \includegraphics[...]{figs/fig-five-dim}       ← 错，预览不出图
+%     因为 figs/ 下同时存在同名 .tex，预览的资产通道补全扩展名时 .tex 排在前面，
+%     会把这张**图**当文本读走，前端于是退回「该格式不在预览中渲染」占位符。
+%
+%  ⚠ 这里的 \usetikzlibrary 与样式（box / key / arr / darr）必须与
+%     test.tex 导言区保持一致。改正文 tikz 配置时同步改这里 ——
+%     否则图会**静默画错**（少一个库就是静默降级，不报错）。
+%
+%  编译： latexmk -xelatex fig-five-dim.tex
+%     或： bash build.sh        （本目录全部 *.tex 一并导出）
+% ================================================================
+\documentclass[border=3pt,tikz]{standalone}
+\usepackage{ctex}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+\begin{document}
+
+\begin{tikzpicture}[
+    font=\small,
+    box/.style={draw=black!55, rounded corners=2.5pt, align=center,
+                minimum height=9mm, inner sep=2.5mm, fill=black!3},
+    key/.style={draw=blue!55!black, rounded corners=2.5pt, align=center,
+                minimum height=9mm, inner sep=2.5mm, fill=blue!8, thick},
+    arr/.style={thick, draw=black!70, -{Stealth[length=2.2mm]}},
+    darr/.style={thick, dashed, draw=orange!75!black, -{Stealth[length=2.2mm]}}
+  ]
+  % 主链路
+  \node[box] (task) at (0, 0)       {用户任务};
+  \node[key] (loop) at (2.9, 0)     {D2\\循环编排};
+  \node[box] (tool) at (5.7, 0.95)  {D1\\工具接口};
+  \node[box] (perm) at (8.1, 0.95)  {D4\\权限与安全};
+  \node[box] (env)  at (11.2, 0.95) {执行环境\\（文件 / 终端 /\\ 网络 / 服务）};
+  \node[box] (res)  at (11.2, -0.95){结果与执行记录};
+  % 支撑
+  \node[box] (llm) at (-0.9, -2.2)  {LLM\\（逐步决策的大脑）};
+  \node[box] (ctx) at (5.7, -1.0)   {D3\\上下文管理};
+  \node[box] (ext) at (2.9, -3.0)   {D5\\扩展生态};
+  % 连线
+  \draw[arr] (task) -- (loop);
+  \draw[arr] (loop) -- (tool);
+  \draw[arr] (tool) -- (perm);
+  \draw[arr] (perm) -- (env);
+  \draw[arr] (env) -- (res);
+  \draw[thick, draw=black!70, {Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}] (llm) -- (loop);
+  \draw[arr] (ctx) -- (tool);
+  \draw[darr] (ext) -- (loop);
+  \draw[darr] (ext) -- (ctx);
+  % Harness 范围框
+  \begin{scope}[on background layer]
+    \node[draw=blue!45, dashed, rounded corners=5pt, inner sep=8pt,
+          fit=(loop)(tool)(perm)(ctx)(ext),
+          label={[blue!55!black,font=\small\bfseries]above:Harness 执行框架}] {};
+  \end{scope}
+\end{tikzpicture}
+
+\end{document}

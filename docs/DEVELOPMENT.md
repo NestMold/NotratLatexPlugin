@@ -53,7 +53,7 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 
 ## 验收门（`npm run gate`）
 
-共 30 层，实测 `✓ 验收门全绿（30/30，用时 86.5s）`。层按 `steps` 数组里的执行顺序编号：
+共 33 层，实测 `✓ 验收门全绿（33/33，用时 115.8s）`。层按 `steps` 数组里的执行顺序编号：
 
 | # | 层 | 加于 |
 | --- | --- | --- |
@@ -87,6 +87,9 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 | 28 | 多文件大纲 + 编码嗅探：`\input` 展开、UTF-16、循环引用 | v0.9.4 |
 | 29 | 快照字节级：`.latex-history` 的 UTF-16 快照 / 恢复逐字节无损 | v0.9.4f |
 | 30 | 引擎一键安装：平台资产表、解压回退、拒绝覆盖、工具契约、装机落点 | v0.9.6 · v0.9.8 |
+| 31 | 标题里的字体声明：`\\[5pt]` 的参数不落正文、声明按组生效、页首与预览同一个内核 | v0.9.10 |
+| 32 | 绘图环境 / 浮层摆位：TikZ 不当正文排、漏 `\\end` 也不吃正文、浮层按实测尺寸翻上方 / 钳视口 | v0.9.11 |
+| 33 | 就地编辑浮层里的图：`loadAssetsIn` 收回调、新增 `loadPopAssets` 走同一条通道、图到货 / 解码后重摆位、降级也回调 | v0.9.13 |
 
 
 > 层号有两个体系，别混。各 check 脚本注释里引用的层号（如 `check-v0827-span.js` 自称「层 [25]」）
@@ -94,6 +97,11 @@ npm run corpus         # node server/corpus/_make.js       生成合成语料
 > 两者在 v0.9 把第 3、4 层（docmodel、txlog）插进去之后就不再一一对应了。
 > 文件头那份注释目前也已自身受损：`[13]` 出现两次（能正常编辑、端到端综合），
 > 缺 `[14]`–`[17]`，止于 `[26]`。想知道第几层是什么，以 `steps` 数组为准。
+>
+> **`v0.9.12`（绘图环境就地渲染）不在这张表里**：它要真编一次、依赖本机 TeX 引擎，
+> 还要与作者产物逐像素对账（约一分钟），所以**没进主门禁的 `steps`**，是手动层。
+> 它自己那 85 项断言随时可单跑：`node .setup/check/v0912-graphic-render.js`
+> （无引擎时相关项 skip，不假绿）。
 
 单层重跑（红哪层跑哪层，按上表编号）：
 
@@ -120,6 +128,10 @@ node .setup/check-v0827-span.js             # 24 行区间
 node .setup/_test-v0828-headspan.js         # 25 标题块跨多行
 node .setup/check-v0829-caret.js            # 26 光标几何 / 全选（真浏览器复验可选：NOTRAT_CARET_BROWSER=1）
 node .setup/test-nav.js                     # 27 端到端综合
+node .setup/check/v0910-title-inline.js      # 31 标题里的字体声明
+node .setup/check/v0911-tikz-popup.js        # 32 绘图环境 / 浮层摆位
+node .setup/check/v0913-pop-assets.js        # 33 浮层里的图没人补
+node .setup/check/v0912-graphic-render.js    # 手动层（不进主门禁 steps）：绘图环境就地渲染（含真编译 + 与作者产物逐像素对账；无引擎时相关项 skip）
 ```
 
 

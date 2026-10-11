@@ -98,6 +98,27 @@ const PV_CSS = `
 .pv-marg{display:inline-block;max-width:240px;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.45);border-radius:6px;padding:1px 8px;margin-left:6px;vertical-align:middle;text-align:left}
 .pv-tocph{border:1px dashed hsl(var(--border));border-radius:10px;padding:16px;margin:16px 0;text-align:center;color:hsl(var(--muted-foreground));font-size:13px;background:hsl(var(--muted)/.25)}
 .pv-tocmini{display:inline-block;margin:6px 0;padding:2px 10px;border-radius:999px;font-size:12px;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.5)}
+/* v0.9.11：绘图环境（TikZ 家族）的占位卡 —— 与 panels/editor.tsx#PV_CSS 同源，改一边必须改另一边 */
+.pv-graphic{border:1px dashed hsl(var(--border));border-radius:10px;margin:14px 0;padding:10px 12px;background:hsl(var(--muted)/.22);text-align:left}
+.pv-graphic-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pv-graphic-badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;color:hsl(var(--primary));background:hsl(var(--primary)/.13)}
+.pv-graphic-say{font-size:12.5px;color:hsl(var(--muted-foreground))}
+.pv-graphic-code{position:relative;margin:8px 0 0;max-height:92px;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;font-family:Consolas,'Courier New',monospace;font-size:11.5px;line-height:1.55;color:hsl(var(--muted-foreground));background:hsl(var(--muted)/.42);border-radius:6px;padding:6px 8px}
+.pv-graphic-code::after{content:"";position:absolute;left:0;right:0;bottom:0;height:26px;background:linear-gradient(to bottom,transparent,hsl(var(--muted)/.42))}
+/* v0.9.12：绘图卡「就地渲染」那一套（与 panels/editor.tsx#PV_CSS 逐字节同源，改一边必须改另一边）。
+ * 导出件其实**不发**这些按钮（renderPreview 带 graphicButtons:false —— 静态网页里没人接这个点击），
+ * 但这几条规则仍然留在这儿：这份 CSS 的契约是「与编辑器那份逐条相同」，
+ * 不是「按需裁剪」。差异迟早会变成「导出的 HTML 跟预览长得不一样」。 */
+.pv-graphic-btn{font:inherit;font-size:12px;line-height:1.75;padding:1px 10px;border-radius:999px;border:1px solid hsl(var(--primary)/.45);background:hsl(var(--primary)/.1);color:hsl(var(--primary));cursor:pointer}
+.pv-graphic-btn:hover{background:hsl(var(--primary)/.2)}
+.pv-graphic-btn[disabled]{opacity:.55;cursor:default}
+.pv-graphic-fold{font:inherit;font-size:12px;line-height:1.75;padding:1px 8px;border-radius:999px;border:1px solid hsl(var(--border));background:transparent;color:hsl(var(--muted-foreground));cursor:pointer}
+.pv-graphic-st{font-size:12px;color:hsl(var(--muted-foreground));overflow-wrap:break-word}
+.pv-graphic-st[data-bad="1"]{color:hsl(0 72% 45%)}
+.pv-graphic-body:empty{display:none}
+.pv-graphic-body{margin:8px 0 0;text-align:center;line-height:0}
+.pv-graphic-img{max-width:100%;height:auto;border-radius:4px;background:#fff}
+.pv-graphic[data-graphic-folded="1"] .pv-graphic-code{display:none}
 .pv-ref,.pv-cite{color:hsl(var(--primary));border-bottom:1px dotted hsl(var(--primary));cursor:pointer;font-size:.9em;padding:0 1px}
 .pv-ref:hover,.pv-cite:hover{background:hsl(var(--primary)/.12);border-radius:3px}
 .pv-bad{color:#ef4444;border-color:#ef4444}
@@ -202,6 +223,9 @@ function buildBodyHtml(source, baseDir) {
   /* v0.9.1：导出 HTML 也展开 \input/\include —— 服务端有 fs，直接同步解析。
    * 规则与 TeX 一致：相对主文件目录；无扩展名补 .tex；找不到 → 静态占位卡。 */
   const r = core.renderPreview(String(source || ""), {
+    /* v0.9.12：导出的是**静态网页**，没人接「渲染这张图」那个点击 ——
+     * 发一个点不动的按钮出去就是骗人，所以这一类卡片关掉按钮。 */
+    graphicButtons: false,
     baseDir: baseDir || "",
     inputResolver: function (name, dir) {
       const n = String(name || "").trim().replace(/^["']|["']$/g, "");

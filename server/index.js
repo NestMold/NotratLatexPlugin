@@ -984,12 +984,13 @@ const TOOLS = [
   {
     name: "latex_asset",
     description:
-      "插件内部资产工具：name=katex 返回离线 KaTeX 渲染包（JS+CSS，字体已内嵌）；path=<图片路径> 返回图片 dataURI（预览插图用；png/jpg/gif/svg/webp/bmp 直读，pdf/eps 用本机 Ghostscript/pdftoppm 栅格化成 PNG——结果缓存在系统临时目录，转不动则报错由前端退回占位符）；path=<.tex 文件> 返回 {text, mtime, size}（预览多文件展开用，512KB 封顶）。一般不直接调用。",
+      "插件内部资产工具：name=katex 返回离线 KaTeX 渲染包（JS+CSS，字体已内嵌）；path=<图片路径> 返回图片 dataURI（预览插图用；png/jpg/gif/svg/webp/bmp 直读，pdf/eps 用本机 Ghostscript/pdftoppm 栅格化成 PNG——结果缓存在系统临时目录，转不动则报错由前端退回占位符）；path=<.tex 文件> 返回 {text, mtime, size}（预览多文件展开用，512KB 封顶）。kind=image 时无扩展名路径按图片优先补全（.tex 垫底），kind=tex（默认）保持 .tex 优先。一般不直接调用。",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "资产名：katex" },
         path: { type: "string", description: "图片文件路径（png/jpg/jpeg/gif/svg/webp/bmp）" },
+        kind: { type: "string", enum: ["image", "tex"], description: "候选扩展名优先序（仅 path 无扩展名时生效）：image=图片优先（.pdf/.eps/.png/.jpg/.jpeg 在前，.tex 垫底，插图通道用）/ tex=.tex 优先（默认，\\input 通道用）" },
         ...WS_PARAM,
       },
     },
@@ -1090,6 +1091,22 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "latex_render_graphic",
+    description:
+      "把预览里的绘图环境（TikZ / PGF / PGFPlots）就地渲染成图片：用本机 TeX 引擎编一次 + 栅格化成 PNG，返回 dataURI 给预览那张占位卡。绝不往工作区写任何文件（aux/log/pdf 全在系统临时目录），按内容 hash 缓存 —— 同一张图第二次点不起进程。standalone 图源文件整篇直编；内联 tikzpicture 先按「原文档导言区」包装，编不过再退「最小导言」，并回报用的是哪一级 + 缺字条数。失败返回 {ok:false, code, reason, log}，由前端退回占位卡（不静默、也不假装）。一般不直接调用 —— 面板的「渲染这张图」按钮走它。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", description: "绘图环境名（tikzpicture / pgfpicture / tikzcd / circuitikz / forest / picture / axis 家族）；必须是能独立成篇的环境" },
+        source: { type: "string", description: "\\begin{...} 之后、\\end{...} 之前的那一段（含 [可选参数]），原样" },
+        doc: { type: "string", description: "被预览的那份 .tex 全文（用来抠导言区 + 判定是不是 standalone 图源）" },
+        path: { type: "string", description: "预览的 .tex 路径（仅用于相对路径 TEXINPUTS 与日志；不读盘，doc 才是权威）" },
+        force: { type: "boolean", description: "true = 无视缓存与「上次失败」记录强制重编（面板的「重试」）" },
+        ...WS_PARAM,
+      },
+    },
+  },
 ];
 
 async function handleToolCall(name, args) {
@@ -1153,7 +1170,11 @@ async function handleToolCall(name, args) {
       if (!st0 || !st0.isFile()) {
         const extRaw = path.extname(abs).toLowerCase();
         if (!extRaw || !MIME[extRaw]) {
-          const cands = [".tex", ".pdf", ".eps", ".png", ".jpg", ".jpeg"]; /* v0.9.1: +.tex（\input 的 TeX 习惯） */
+          /* v0.9.12：候选顺序按调用方意图走 —— kind=image（插图通道）图片在前、.tex 垫底，
+           * 免得 \includegraphics{fig} 撞上同名 fig.tex 拿回一段源码；默认仍是 .tex 优先。 */
+          const cands = String(args.kind || "").toLowerCase() === "image"
+            ? [".pdf", ".eps", ".png", ".jpg", ".jpeg", ".tex"] /* v0.9.12: image 优先 */
+            : [".tex", ".pdf", ".eps", ".png", ".jpg", ".jpeg"]; /* v0.9.1: +.tex（\input 的 TeX 习惯） */
           let hit = "";
           for (const c of cands) {
             try { if (fs.statSync(abs + c).isFile()) { hit = abs + c; break; } } catch {}
@@ -1191,6 +1212,28 @@ async function handleToolCall(name, args) {
       return readImage(file, ext);
     }
     throw new Error("latex_asset 需要 name=katex 或 path=<图片路径>");
+  }
+  if (name === "latex_render_graphic") {
+    const GR = require("./graphic-render.js");
+    /* v0.9.12：绘图环境就地渲染。engine 探测复用「编译正文」那条链（CONTRIB.pickCompiler），
+     * 用户装了什么引擎就用什么 —— 不在这儿另造一套探测，免得两条路的结论对不上。 */
+    const out = await GR.renderGraphic(
+      {
+        kind: args.kind,
+        source: args.source,
+        doc: args.doc,
+        path: args.path || args.filePath,
+        force: !!args.force,
+      },
+      {
+        pickEngine: function () {
+          const picked = CONTRIB.pickCompiler(CONTRIB.envReal("LATEX_COMPILER"), resolveCompiler);
+          return { exe: picked.exe, name: picked.name };
+        },
+        log: log,
+      }
+    );
+    return JSON.stringify(out);
   }
   if (name === "latex_outline") {
     const input = args.path || args.filePath;

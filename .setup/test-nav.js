@@ -162,7 +162,7 @@ const MODULE_CACHE = { comp: null, react: null, reactMod: null };
 (function () {
   const fw = { __esModule: true };
   Object.defineProperty(fw, "default", { get: function () { return MODULE_CACHE.react; } });
-  ["createElement", "Fragment", "useState", "useRef", "useMemo", "useCallback", "useEffect"].forEach(function (k) {
+  ["createElement", "Fragment", "useState", "useRef", "useMemo", "useCallback", "useEffect", "useLayoutEffect"].forEach(function (k) {
     Object.defineProperty(fw, k, { get: function () { return MODULE_CACHE.react[k]; } });
   });
   MODULE_CACHE.reactMod = fw;
@@ -216,6 +216,10 @@ function createHarness(props) {
       return hooks.deps[i].v;
     },
     useCallback: function (fn) { cursor++; return fn; },
+    /* v0.9.11：产物里 import 了 useLayoutEffect（就地编辑浮层的摆位要在 paint 之前算）。
+     * 这一层是假 DOM，没有 paint 的概念 —— 与 useEffect 同一套语义即可；但**键不能缺**：
+     * 少一个键就是 TypeError，会把 13 层跟摆位毫无关系的门禁一起假红。 */
+    useLayoutEffect: function (fn, deps) { return React.useEffect(fn, deps); },
     useEffect: function (fn, deps) {
       const i = cursor++;
       const prev = hooks.effects[i];
