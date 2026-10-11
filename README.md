@@ -206,12 +206,12 @@ server 侧共 13 个工具（stdio，纯 Node 零依赖），Notrat 的 AI 助�
 
 ```bash
 npm install        # 只依赖 katex（预览公式资源）
-npm run gate       # ★ 验收门 33 层，全绿约 115s，任何一层红了退出非零
+npm run gate       # ★ 验收门 34 层，全绿约 120s，任何一层红了退出非零
 npm run test:core  # 内核单测
 npm run build      # 打单文件包（热更新）
 ```
 
-源码结构、验收门 33 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
+源码结构、验收门 34 层明细、单层重跑、功能级验收与单文件包构建，见 **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**。
 
 技术栈：面板是 React（TSX，宿主内联加载），server 是纯 Node 零依赖（MCP stdio），构建用 esbuild，测试全部离线可跑（jsdom 做真 DOM 往返）。
 
@@ -259,7 +259,7 @@ npm run build      # 打单文件包（热更新）
 欢迎 Issue 和 PR：
 
 - **真实 `.tex` 语料**是最缺的——合成语料覆盖想得到的边界，真实论文才覆盖想不到的（详见 [docs/v0.9-status.md](docs/v0.9-status.md)「语料」一节）。欢迎投递可公开的论文源码（脱敏后）；
-- 改代码前先跑 `npm run gate`，PR 请保证 33 层全绿；
+- 改代码前先跑 `npm run gate`，PR 请保证 34 层全绿；
 - 提 Issue 请附最小复现 `.tex` 与 Notrat 版本号。
 
 ## 许可证

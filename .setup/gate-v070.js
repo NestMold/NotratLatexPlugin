@@ -57,7 +57,15 @@
  *                            两条一起修：绘图环境出占位卡（源码原样收着、漏 \end 也不吃
  *                            正文），浮层改按 offsetWidth/offsetHeight 实量后翻上方 / 钳视口
  *                            （v0.9.11 加）
- *   [33] 浮层里的图没人补   : 「点击就地编辑的时候无法对上」—— 浮层位置与块都对，
+ *   [33] 绘图环境就地渲染   : 「不能直接看到图片吗」—— 上一版给绘图环境做的那张占位卡写着
+ *                            「预览不渲染，编译 PDF 后可见」：对，但只对了半句 —— 浏览器里
+ *                            做不到（内核双端零依赖），本机做得到。点一下才编（一屏十张图
+ *                            自动编 = 首屏 19 秒），编过的按内容 hash 落盘（第二次点不起进程）；
+ *                            绝不往工作区写文件（aux/log/pdf 全在系统临时目录）。★ 最贵的错
+ *                            不是「编不过」是**编过了但画错了**：换成 standalone 会连 ctex 一起
+ *                            丢，而编译退出码仍是 0 —— 中文静默消失、图窄 89px。所以既补 ctex，
+ *                            也数日志里的 Missing character（v0.9.12 加）
+ *   [34] 浮层里的图没人补   : 「点击就地编辑的时候无法对上」—— 浮层位置与块都对，
  *                            唯独图没了，那个位置上只剩一行文件名。内核发出的插图标签
  *                            只有 data-asset、**没有 src**（浏览器于是显示 alt 文本），
  *                            而「每拍补一次图」只喂了 pvRef —— .wys-pop 是它的**兄弟
@@ -108,6 +116,7 @@ const steps = [
   { name: "引擎一键安装：平台资产表 / 解压 / 拒绝覆盖 / 工具契约（v096-engine-install.js）", file: ".setup/check/v096-engine-install.js" },
   { name: "标题里的字体声明：\\[5pt] 的参数不落正文 / 声明按组生效 / 页首走同一内核（v0910-title-inline.js）", file: ".setup/check/v0910-title-inline.js" },
   { name: "绘图环境 / 浮层摆位：TikZ 不当正文排 / 漏 \\end 不吃正文 / 浮层按实测尺寸自适应（v0911-tikz-popup.js）", file: ".setup/check/v0911-tikz-popup.js" },
+  { name: "绘图环境就地渲染：卡片按钮 / standalone 判定 / 补 ctex（不补会静默缺字）/ 两级导言 / 真编一次 + 缓存 / 不碰工作区 / 三边白名单对账（v0912-graphic-render.js）", file: ".setup/check/v0912-graphic-render.js" },
   { name: "浮层里的图没人补：缓存命中零 MCP / 到货补 src 并回调重摆位 / 降级也回调（v0913-pop-assets.js）", file: ".setup/check/v0913-pop-assets.js" },
 ];
 
